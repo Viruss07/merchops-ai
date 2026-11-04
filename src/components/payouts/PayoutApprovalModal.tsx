@@ -14,15 +14,21 @@ import {
   Building2,
   Key,
 } from 'lucide-react';
-import { Bill, MerchantAccount } from '@/types';
-import { formatCentsToUSD } from '@/lib/money';
+import { Bill, MerchantAccount, AuditLogEntry } from '@/types';
+import { formatCentsToUSD, evaluatePayoutPolicy } from '@/lib/money';
 
 interface PayoutApprovalModalProps {
   bill: Bill | null;
   account: MerchantAccount;
   isOpen: boolean;
   onClose: () => void;
-  onPayoutSuccess: (billId: string, isRealPayPal: boolean) => void;
+  onPayoutSuccess: (
+    billId: string,
+    isRealPayPal: boolean,
+    updatedAccount?: MerchantAccount,
+    updatedBills?: Bill[],
+    updatedLogs?: AuditLogEntry[]
+  ) => void;
   onNavigateToCollections?: () => void;
 }
 
@@ -58,9 +64,15 @@ export function PayoutApprovalModal({
 
   const currentBalance = account.clearedBalanceCents;
   const reserve = account.minReserveCents;
-  const postPayoutBalance = currentBalance - bill.amountCents;
-  const wouldBreach = postPayoutBalance < reserve;
-  const deficitCents = wouldBreach ? reserve - postPayoutBalance : 0;
+  const policy = evaluatePayoutPolicy({
+    currentBalanceCents: currentBalance,
+    minReserveCents: reserve,
+    billAmountCents: bill.amountCents,
+  });
+  const postPayoutBalance = policy.postPayoutBalanceCents;
+  const wouldBreach = policy.wouldBreach;
+  const deficitCents = policy.deficitCents;
+  const bufferCents = policy.bufferCents;
 
   const handleAuthorize = async () => {
     if (!confirmed) {
@@ -91,7 +103,13 @@ export function PayoutApprovalModal({
 
       setSuccessMessage(data.message || 'Payout authorized successfully.');
       setTimeout(() => {
-        onPayoutSuccess(bill.id, data.mode === 'PAYPAL_SANDBOX');
+        onPayoutSuccess(
+          bill.id,
+          data.mode === 'PAYPAL_SANDBOX',
+          data.account,
+          data.bills,
+          data.auditLogs
+        );
         onClose();
       }, 1500);
     } catch (err: any) {
@@ -215,7 +233,7 @@ export function PayoutApprovalModal({
               </div>
             ) : (
               <p className="text-xs text-emerald-800 pt-1 leading-normal">
-                Even after disbursing {formatCentsToUSD(bill.amountCents)}, the remaining {formatCentsToUSD(postPayoutBalance)} safely exceeds your {formatCentsToUSD(reserve)} reserve floor with a +{formatCentsToUSD(postPayoutBalance - reserve)} buffer.
+                Even after disbursing {formatCentsToUSD(bill.amountCents)}, the remaining {formatCentsToUSD(postPayoutBalance)} safely exceeds your {formatCentsToUSD(reserve)} reserve floor with a +{formatCentsToUSD(bufferCents)} buffer.
               </p>
             )}
           </div>

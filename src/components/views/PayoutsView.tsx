@@ -10,15 +10,21 @@ import {
   Lock,
   ArrowRight,
 } from 'lucide-react';
-import { formatCentsToUSD } from '@/lib/money';
-import { Bill, MerchantAccount } from '@/types';
+import { formatCentsToUSD, evaluatePayoutPolicy } from '@/lib/money';
+import { Bill, MerchantAccount, AuditLogEntry } from '@/types';
 import { PayoutApprovalModal } from '@/components/payouts/PayoutApprovalModal';
 import { BillsGrid } from '@/components/payouts/BillsGrid';
 
 interface PayoutsViewProps {
   bills: Bill[];
   account: MerchantAccount;
-  onDisburseBill: (billId: string, isRealPayPal?: boolean) => void;
+  onDisburseBill: (
+    billId: string,
+    isRealPayPal?: boolean,
+    updatedAccount?: MerchantAccount,
+    updatedBills?: Bill[],
+    updatedLogs?: AuditLogEntry[]
+  ) => void;
   onNavigateToCollections?: () => void;
 }
 
@@ -44,16 +50,29 @@ export function PayoutsView({
     setSelectedBillForApproval(null);
   };
 
-  const handlePayoutSuccess = (billId: string, isRealPayPal: boolean) => {
-    onDisburseBill(billId, isRealPayPal);
+  const handlePayoutSuccess = (
+    billId: string,
+    isRealPayPal: boolean,
+    updatedAccount?: MerchantAccount,
+    updatedBills?: Bill[],
+    updatedLogs?: AuditLogEntry[]
+  ) => {
+    onDisburseBill(billId, isRealPayPal, updatedAccount, updatedBills, updatedLogs);
   };
 
   // Inspect the highest priority bill (Acme Supplies)
   const acmeBill = bills.find((b) => b.id === 'bill-acme-01');
   const acmePending = acmeBill && acmeBill.status === 'PENDING';
-  const acmePostBalance = acmeBill ? currentBalance - acmeBill.amountCents : currentBalance;
-  const acmeWouldBreach = acmePending && acmePostBalance < reserve;
-  const acmeDeficit = acmeWouldBreach ? reserve - acmePostBalance : 0;
+  const acmePolicy = acmeBill
+    ? evaluatePayoutPolicy({
+        currentBalanceCents: currentBalance,
+        minReserveCents: reserve,
+        billAmountCents: acmeBill.amountCents,
+      })
+    : null;
+  const acmeWouldBreach = acmePending && acmePolicy ? acmePolicy.wouldBreach : false;
+  const acmeDeficit = acmePolicy ? acmePolicy.deficitCents : 0;
+  const acmePostBalance = acmePolicy ? acmePolicy.postPayoutBalanceCents : currentBalance;
 
   return (
     <div className="space-y-6">

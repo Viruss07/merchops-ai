@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef } from 'ag-grid-community';
-import { formatCentsToUSD } from '@/lib/money';
+import { formatCentsToUSD, evaluatePayoutPolicy } from '@/lib/money';
 import { merchOpsTheme } from '@/lib/agGrid';
 import { Bill } from '@/types';
 import {
@@ -138,16 +138,19 @@ export function BillsGrid({
               </div>
             );
           }
-          const postPayoutBalance = currentBalance - bill.amountCents;
-          const wouldBreach = postPayoutBalance < reserve;
+          const policy = evaluatePayoutPolicy({
+            currentBalanceCents: currentBalance,
+            minReserveCents: reserve,
+            billAmountCents: bill.amountCents,
+          });
           return (
             <div className="flex items-center h-full">
               <span
                 className={`font-mono font-bold text-xs ${
-                  wouldBreach ? 'text-rose-700 underline' : 'text-emerald-700'
+                  policy.wouldBreach ? 'text-rose-700 underline' : 'text-emerald-700'
                 }`}
               >
-                {formatCentsToUSD(postPayoutBalance)}
+                {formatCentsToUSD(policy.postPayoutBalanceCents)}
               </span>
             </div>
           );
@@ -163,18 +166,17 @@ export function BillsGrid({
           const bill: Bill = params.data;
           if (!bill) return '';
           if (bill.status === 'DISBURSED') return 'Settled';
-          const postPayoutBalance = currentBalance - bill.amountCents;
-          return postPayoutBalance < reserve ? 'Breaches Floor' : 'Reserve Safe';
+          const policy = evaluatePayoutPolicy({
+            currentBalanceCents: currentBalance,
+            minReserveCents: reserve,
+            billAmountCents: bill.amountCents,
+          });
+          return policy.wouldBreach ? 'Breaches Floor' : 'Reserve Safe';
         },
         cellRenderer: (params: any) => {
           const bill: Bill = params.data;
           if (!bill) return null;
           const isDisbursed = bill.status === 'DISBURSED';
-          const postPayoutBalance = currentBalance - bill.amountCents;
-          const wouldBreach = !isDisbursed && postPayoutBalance < reserve;
-          const deficit = wouldBreach ? reserve - postPayoutBalance : 0;
-          const buffer = !isDisbursed && !wouldBreach ? postPayoutBalance - reserve : 0;
-
           if (isDisbursed) {
             return (
               <div className="flex items-center h-full">
@@ -186,12 +188,18 @@ export function BillsGrid({
             );
           }
 
-          if (wouldBreach) {
+          const policy = evaluatePayoutPolicy({
+            currentBalanceCents: currentBalance,
+            minReserveCents: reserve,
+            billAmountCents: bill.amountCents,
+          });
+
+          if (policy.wouldBreach) {
             return (
               <div className="flex items-center h-full">
                 <span className="inline-flex items-center space-x-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-800">
                   <ShieldAlert className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-                  <span>Breaches Floor (-{formatCentsToUSD(deficit)})</span>
+                  <span>Breaches Floor (-{formatCentsToUSD(policy.deficitCents)})</span>
                 </span>
               </div>
             );
@@ -201,7 +209,7 @@ export function BillsGrid({
             <div className="flex items-center h-full">
               <span className="inline-flex items-center space-x-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                <span>Reserve Safe (+{formatCentsToUSD(buffer)})</span>
+                <span>Reserve Safe (+{formatCentsToUSD(policy.bufferCents)})</span>
               </span>
             </div>
           );

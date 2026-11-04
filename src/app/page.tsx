@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { demoStore } from '@/lib/store';
+import { MerchantAccount, Bill, AuditLogEntry } from '@/types';
 import { calculateRunway } from '@/lib/runway';
 import { Navbar } from '@/components/Navbar';
 import { Navigation, TabKey } from '@/components/Navigation';
@@ -26,28 +27,65 @@ export default function DashboardPage() {
     setLogs(demoStore.getAuditLogs());
   };
 
+  // Synchronize client with server state on initial load
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/state')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!mounted || !data?.success) return;
+        if (data.account) setAccount(data.account);
+        if (data.invoices) setInvoices(data.invoices);
+        if (data.bills) setBills(data.bills);
+        if (data.auditLogs) setLogs(data.auditLogs);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   // Reset demo data
   const handleResetDemo = async () => {
     setResetting(true);
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          setAccount(json.data.account);
+          setInvoices(json.data.invoices);
+          setBills(json.data.bills);
+          setLogs(json.data.auditLogs);
+          setResetting(false);
+          return;
+        }
+      }
+    } catch {}
     demoStore.resetDemoData();
     syncFromStore();
-    try {
-      await fetch('/api/reset', { method: 'POST' });
-    } catch {}
     setTimeout(() => setResetting(false), 300);
   };
 
-  // Simulate Customer Invoice Payment (Apex Corp)
+  // Simulate Customer Invoice Payment (Apex Corp / Beacon Studios)
   const handleSimulatePayment = async (invoiceId: string) => {
-    demoStore.markInvoicePaid(invoiceId);
-    syncFromStore();
     try {
-      await fetch('/api/invoices/simulate-payment', {
+      const res = await fetch('/api/invoices/simulate-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceId }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.account) setAccount(data.account);
+        if (data.invoices) setInvoices(data.invoices);
+        if (data.auditLogs) setLogs(data.auditLogs);
+        return;
+      }
     } catch {}
+    // Fallback if offline / test environment
+    demoStore.markInvoicePaid(invoiceId);
+    syncFromStore();
   };
 
   // Record approved AI reminder
@@ -56,10 +94,21 @@ export default function DashboardPage() {
     syncFromStore();
   };
 
-  // Disburse Vendor Bill (Acme Supplies)
-  const handleDisburseBill = (billId: string, isRealPayPal: boolean = false) => {
-    demoStore.markBillDisbursed(billId, isRealPayPal);
-    syncFromStore();
+  // Disburse Vendor Bill (Acme Supplies / Nexus Cloud)
+  const handleDisburseBill = (
+    billId: string,
+    isRealPayPal: boolean = false,
+    updatedAccount?: MerchantAccount,
+    updatedBills?: Bill[],
+    updatedLogs?: AuditLogEntry[]
+  ) => {
+    if (updatedAccount) setAccount(updatedAccount);
+    if (updatedBills) setBills(updatedBills);
+    if (updatedLogs) setLogs(updatedLogs);
+    if (!updatedAccount) {
+      demoStore.markBillDisbursed(billId, isRealPayPal);
+      syncFromStore();
+    }
   };
 
   // Calculations for badges using deterministic engine

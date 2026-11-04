@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { demoStore } from '@/lib/store';
-import { formatCentsToUSD } from '@/lib/money';
+import { formatCentsToUSD, evaluatePayoutPolicy } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,15 +53,18 @@ export async function POST(req: NextRequest) {
 
     // Guard 4: Enforce Minimum Cash Reserve Protection
     const account = demoStore.getAccount();
-    const postPayoutBalance = account.clearedBalanceCents - bill.amountCents;
+    const policy = evaluatePayoutPolicy({
+      currentBalanceCents: account.clearedBalanceCents,
+      minReserveCents: account.minReserveCents,
+      billAmountCents: bill.amountCents,
+    });
 
-    if (postPayoutBalance < account.minReserveCents) {
-      const deficitCents = account.minReserveCents - postPayoutBalance;
+    if (!policy.allowed) {
       // Record blocked attempt in audit log
       demoStore.addAuditLog({
         actor: 'SYSTEM',
         action: 'PAYOUT_BLOCKED_RESERVE_BREACH',
-        details: `Blocked payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName}. Projected balance ${formatCentsToUSD(postPayoutBalance)} breaches ${formatCentsToUSD(account.minReserveCents)} reserve by ${formatCentsToUSD(deficitCents)}.`,
+        details: `Blocked payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName}. Projected balance ${formatCentsToUSD(policy.postPayoutBalanceCents)} breaches ${formatCentsToUSD(account.minReserveCents)} reserve by ${formatCentsToUSD(policy.deficitCents)}.`,
         amountCents: bill.amountCents,
         isSimulated: executionMode === 'SIMULATION',
       });
@@ -69,10 +72,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: 'RESERVE_BREACH_BLOCKED',
-          message: `Payout blocked by Cash Reserve Policy. Paying ${formatCentsToUSD(bill.amountCents)} would drop cleared cash to ${formatCentsToUSD(postPayoutBalance)}, breaching your ${formatCentsToUSD(account.minReserveCents)} reserve floor by ${formatCentsToUSD(deficitCents)}.`,
-          postPayoutBalanceCents: postPayoutBalance,
+          message: `Payout blocked by Cash Reserve Policy. Paying ${formatCentsToUSD(bill.amountCents)} would drop cleared cash to ${formatCentsToUSD(policy.postPayoutBalanceCents)}, breaching your ${formatCentsToUSD(account.minReserveCents)} reserve floor by ${formatCentsToUSD(policy.deficitCents)}.`,
+          postPayoutBalanceCents: policy.postPayoutBalanceCents,
           reserveCents: account.minReserveCents,
-          deficitCents: deficitCents,
+          deficitCents: policy.deficitCents,
+          bufferCents: policy.bufferCents,
         },
         { status: 403 }
       );
@@ -192,6 +196,9 @@ export async function POST(req: NextRequest) {
         billId: bill.id,
         batchId: payoutData.batch_header?.payout_batch_id || 'SANDBOX-BATCH',
         message: `Successfully executed live PayPal Sandbox Payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName}.`,
+        account: demoStore.getAccount(),
+        bills: demoStore.getBills(),
+        auditLogs: demoStore.getAuditLogs(),
       });
     }
 
@@ -206,6 +213,9 @@ export async function POST(req: NextRequest) {
       billId: bill.id,
       idempotencyKey,
       message: `Simulated payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName} confirmed. Cash balance updated.`,
+      account: demoStore.getAccount(),
+      bills: demoStore.getBills(),
+      auditLogs: demoStore.getAuditLogs(),
     });
   } catch (error: any) {
     return NextResponse.json(

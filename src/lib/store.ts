@@ -100,42 +100,54 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   },
 ];
 
-// In-Memory mutable singletons
-let currentAccount: MerchantAccount = { ...INITIAL_ACCOUNT };
-let currentInvoices: Invoice[] = JSON.parse(JSON.stringify(INITIAL_INVOICES));
-let currentBills: Bill[] = JSON.parse(JSON.stringify(INITIAL_BILLS));
-let currentAuditLogs: AuditLogEntry[] = JSON.parse(JSON.stringify(INITIAL_AUDIT_LOGS));
-/**
- * In-memory idempotency tracker for the prototype demo.
- * NOTE: This Set resides purely in Node process memory and RESETS on server restart.
- * For production, this must be persisted in a database (e.g. PostgreSQL payout_idempotency table)
- * to survive crashes, restarts, and horizontally scaled instances.
- */
-const usedIdempotencyKeys = new Set<string>();
+interface GlobalStoreState {
+  currentAccount: MerchantAccount;
+  currentInvoices: Invoice[];
+  currentBills: Bill[];
+  currentAuditLogs: AuditLogEntry[];
+  usedIdempotencyKeys: Set<string>;
+}
+
+// Ensure singleton persistence across Next.js API route bundles in Node.js process
+const globalForStore = globalThis as unknown as {
+  __merchops_store__?: GlobalStoreState;
+};
+
+if (!globalForStore.__merchops_store__) {
+  globalForStore.__merchops_store__ = {
+    currentAccount: { ...INITIAL_ACCOUNT },
+    currentInvoices: JSON.parse(JSON.stringify(INITIAL_INVOICES)),
+    currentBills: JSON.parse(JSON.stringify(INITIAL_BILLS)),
+    currentAuditLogs: JSON.parse(JSON.stringify(INITIAL_AUDIT_LOGS)),
+    usedIdempotencyKeys: new Set<string>(),
+  };
+}
+
+const state = globalForStore.__merchops_store__;
 
 export const demoStore = {
-  getAccount: () => ({ ...currentAccount }),
-  getInvoices: () => [...currentInvoices],
-  getBills: () => [...currentBills],
-  getAuditLogs: () => [...currentAuditLogs],
+  getAccount: () => ({ ...state.currentAccount }),
+  getInvoices: () => [...state.currentInvoices],
+  getBills: () => [...state.currentBills],
+  getAuditLogs: () => [...state.currentAuditLogs],
 
-  hasIdempotencyKey: (key: string) => usedIdempotencyKeys.has(key),
-  recordIdempotencyKey: (key: string) => usedIdempotencyKeys.add(key),
+  hasIdempotencyKey: (key: string) => state.usedIdempotencyKeys.has(key),
+  recordIdempotencyKey: (key: string) => state.usedIdempotencyKeys.add(key),
 
   updateBalance: (deltaCents: number) => {
-    currentAccount.clearedBalanceCents += deltaCents;
-    return currentAccount.clearedBalanceCents;
+    state.currentAccount.clearedBalanceCents += deltaCents;
+    return state.currentAccount.clearedBalanceCents;
   },
 
   markInvoicePaid: (invoiceId: string) => {
-    const inv = currentInvoices.find((i) => i.id === invoiceId);
+    const inv = state.currentInvoices.find((i) => i.id === invoiceId);
     if (!inv || inv.status === 'PAID') return null;
 
     inv.status = 'PAID';
     inv.daysOverdue = 0;
-    currentAccount.clearedBalanceCents += inv.amountCents;
+    state.currentAccount.clearedBalanceCents += inv.amountCents;
 
-    currentAuditLogs.unshift({
+    state.currentAuditLogs.unshift({
       id: `audit-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor: 'PAYPAL_WEBHOOK',
@@ -149,12 +161,12 @@ export const demoStore = {
   },
 
   recordReminderSent: (invoiceId: string, subject: string, body: string) => {
-    const inv = currentInvoices.find((i) => i.id === invoiceId);
+    const inv = state.currentInvoices.find((i) => i.id === invoiceId);
     if (!inv) return null;
 
     inv.lastReminderSentAt = new Date().toISOString();
 
-    currentAuditLogs.unshift({
+    state.currentAuditLogs.unshift({
       id: `audit-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor: 'MERCHANT',
@@ -168,13 +180,13 @@ export const demoStore = {
   },
 
   markBillDisbursed: (billId: string, isRealPayPal: boolean = false) => {
-    const bill = currentBills.find((b) => b.id === billId);
+    const bill = state.currentBills.find((b) => b.id === billId);
     if (!bill || bill.status === 'DISBURSED') return null;
 
     bill.status = 'DISBURSED';
-    currentAccount.clearedBalanceCents -= bill.amountCents;
+    state.currentAccount.clearedBalanceCents -= bill.amountCents;
 
-    currentAuditLogs.unshift({
+    state.currentAuditLogs.unshift({
       id: `audit-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor: 'MERCHANT',
@@ -193,21 +205,21 @@ export const demoStore = {
       id: `audit-${Date.now()}`,
       timestamp: new Date().toISOString(),
     };
-    currentAuditLogs.unshift(newEntry);
+    state.currentAuditLogs.unshift(newEntry);
     return newEntry;
   },
 
   resetDemoData: () => {
-    currentAccount = { ...INITIAL_ACCOUNT };
-    currentInvoices = JSON.parse(JSON.stringify(INITIAL_INVOICES));
-    currentBills = JSON.parse(JSON.stringify(INITIAL_BILLS));
-    currentAuditLogs = JSON.parse(JSON.stringify(INITIAL_AUDIT_LOGS));
-    usedIdempotencyKeys.clear();
+    state.currentAccount = { ...INITIAL_ACCOUNT };
+    state.currentInvoices = JSON.parse(JSON.stringify(INITIAL_INVOICES));
+    state.currentBills = JSON.parse(JSON.stringify(INITIAL_BILLS));
+    state.currentAuditLogs = JSON.parse(JSON.stringify(INITIAL_AUDIT_LOGS));
+    state.usedIdempotencyKeys.clear();
     return {
-      account: currentAccount,
-      invoices: currentInvoices,
-      bills: currentBills,
-      auditLogs: currentAuditLogs,
+      account: state.currentAccount,
+      invoices: state.currentInvoices,
+      bills: state.currentBills,
+      auditLogs: state.currentAuditLogs,
     };
   },
 };

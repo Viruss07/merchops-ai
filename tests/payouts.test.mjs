@@ -10,6 +10,10 @@ function subtractCents(a, b) {
   return Math.round(a) - Math.round(b);
 }
 
+/**
+ * Deterministic Cash Reserve Policy Evaluation
+ * Matches src/lib/money.ts
+ */
 function evaluatePayoutPolicy({ currentBalanceCents, minReserveCents, billAmountCents }) {
   const postPayoutBalanceCents = subtractCents(currentBalanceCents, billAmountCents);
   const wouldBreach = postPayoutBalanceCents < minReserveCents;
@@ -27,6 +31,24 @@ function evaluatePayoutPolicy({ currentBalanceCents, minReserveCents, billAmount
     bufferCents,
   };
 }
+
+test('Payout Policy: Nexus Cloud Services ($400) from $3,550 cash is allowed with +$1,150 reserve buffer', () => {
+  // Exact user screenshot scenario:
+  // Cleared cash: $3,550.00
+  // Payout amount: $400.00
+  // Safety reserve: $2,000.00
+  const result = evaluatePayoutPolicy({
+    currentBalanceCents: 355000, // $3,550.00
+    minReserveCents: 200000,     // $2,000.00
+    billAmountCents: 40000,      // $400.00
+  });
+
+  assert.equal(result.allowed, true, 'Payout of $400 from $3,550 must be allowed');
+  assert.equal(result.wouldBreach, false, 'Must not breach reserve floor');
+  assert.equal(result.postPayoutBalanceCents, 315000, 'Projected balance must be exact $3,150.00 (315000 cents)');
+  assert.equal(result.deficitCents, 0, 'Deficit must be zero');
+  assert.equal(result.bufferCents, 115000, 'Reserve buffer must be exact +$1,150.00 (115000 cents)');
+});
 
 test('Payout Policy: Acme Supplies ($3,000) is blocked when balance is $4,200 (deficit $800)', () => {
   const result = evaluatePayoutPolicy({
@@ -73,12 +95,21 @@ test('Human Authorization & Idempotency Key Guards', () => {
     if (idempotencyStore.has(idempotencyKey)) {
       return { status: 409, error: 'DUPLICATE_REQUEST' };
     }
-    const postBalance = currentBalanceCents - billAmountCents;
-    if (postBalance < reserveCents) {
-      return { status: 403, error: 'RESERVE_BREACH_BLOCKED' };
+    const policy = evaluatePayoutPolicy({
+      currentBalanceCents,
+      minReserveCents: reserveCents,
+      billAmountCents,
+    });
+    if (!policy.allowed) {
+      return {
+        status: 403,
+        error: 'RESERVE_BREACH_BLOCKED',
+        deficitCents: policy.deficitCents,
+        postPayoutBalanceCents: policy.postPayoutBalanceCents,
+      };
     }
     idempotencyStore.add(idempotencyKey);
-    return { status: 200, success: true, newBalanceCents: postBalance };
+    return { status: 200, success: true, newBalanceCents: policy.postPayoutBalanceCents };
   }
 
   // 1. Unconfirmed attempt rejected
@@ -93,40 +124,41 @@ test('Human Authorization & Idempotency Key Guards', () => {
   assert.equal(unconfirmed.status, 400);
   assert.equal(unconfirmed.error, 'MERCHANT_APPROVAL_REQUIRED');
 
-  // 2. Reserve breach attempt rejected
+  // 2. Reserve breach attempt rejected ($4,200 - $3,000 = $1,200 -> breach $2,000 by $800)
   const breached = processPayoutAttempt({
     billId: 'bill-acme-01',
     confirmed: true,
     idempotencyKey: 'key-102',
-    currentBalanceCents: 420000, // insufficient
+    currentBalanceCents: 420000,
     reserveCents: 200000,
     billAmountCents: 300000,
   });
   assert.equal(breached.status, 403);
   assert.equal(breached.error, 'RESERVE_BREACH_BLOCKED');
+  assert.equal(breached.deficitCents, 80000);
+  assert.equal(breached.postPayoutBalanceCents, 120000);
 
-  // 3. Valid payout succeeds
+  // 3. Valid payout succeeds ($3,550 - $400 = $3,150 -> $1,150 above $2,000 reserve)
   const valid = processPayoutAttempt({
-    billId: 'bill-acme-01',
+    billId: 'bill-cloud-02',
     confirmed: true,
     idempotencyKey: 'key-103',
-    currentBalanceCents: 570000,
+    currentBalanceCents: 355000,
     reserveCents: 200000,
-    billAmountCents: 300000,
+    billAmountCents: 40000,
   });
   assert.equal(valid.status, 200);
-  assert.equal(valid.newBalanceCents, 270000);
+  assert.equal(valid.newBalanceCents, 315000);
 
   // 4. Replay attack with same idempotency key is rejected
   const replay = processPayoutAttempt({
-    billId: 'bill-acme-01',
+    billId: 'bill-cloud-02',
     confirmed: true,
     idempotencyKey: 'key-103', // Reused key
-    currentBalanceCents: 270000,
+    currentBalanceCents: 315000,
     reserveCents: 200000,
-    billAmountCents: 300000,
+    billAmountCents: 40000,
   });
   assert.equal(replay.status, 409);
   assert.equal(replay.error, 'DUPLICATE_REQUEST');
 });
-

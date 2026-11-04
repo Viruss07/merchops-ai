@@ -46,3 +46,42 @@ export function subtractCents(a: number, b: number): number {
   return Math.round(a) - Math.round(b);
 }
 
+export interface PayoutPolicyEvaluation {
+  allowed: boolean;
+  postPayoutBalanceCents: number;
+  wouldBreach: boolean;
+  deficitCents: number;
+  bufferCents: number;
+}
+
+/**
+ * Deterministic Cash Reserve Policy Evaluation
+ *
+ * Business Rules:
+ * - projectedBalance = currentClearedCash - payoutAmount
+ * - reserveBuffer = projectedBalance - safetyReserve
+ * - A payout is allowed if: projectedBalance >= safetyReserve
+ */
+export function evaluatePayoutPolicy({
+  currentBalanceCents,
+  minReserveCents,
+  billAmountCents,
+}: {
+  currentBalanceCents: number;
+  minReserveCents: number;
+  billAmountCents: number;
+}): PayoutPolicyEvaluation {
+  const postPayoutBalanceCents = Math.round(currentBalanceCents) - Math.round(billAmountCents);
+  const wouldBreach = postPayoutBalanceCents < Math.round(minReserveCents);
+  const deficitCents = wouldBreach ? Math.round(minReserveCents) - postPayoutBalanceCents : 0;
+  const bufferCents = !wouldBreach ? postPayoutBalanceCents - Math.round(minReserveCents) : 0;
+
+  return {
+    allowed: !wouldBreach,
+    postPayoutBalanceCents,
+    wouldBreach,
+    deficitCents,
+    bufferCents,
+  };
+}
+

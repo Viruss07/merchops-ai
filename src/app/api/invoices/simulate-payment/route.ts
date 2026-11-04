@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
       message: `Simulated receipt of payment for invoice ${invoice.invoiceNumber} (${formatCentsToUSD(invoice.amountCents)}). Updated cleared balance to ${formatCentsToUSD(updatedAccount.clearedBalanceCents)}.`,
       invoice,
       account: updatedAccount,
+      invoices: demoStore.getInvoices(),
+      auditLogs: demoStore.getAuditLogs(),
     });
   } catch (error: any) {
     return NextResponse.json({ error: 'SERVER_ERROR', message: error.message || 'Failed to simulate payment.' }, { status: 500 });
