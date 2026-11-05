@@ -25,16 +25,27 @@ export type PayoutExecutionMode = 'SIMULATION' | 'PAYPAL_SANDBOX';
 
 export interface AuthorizePayoutInput {
   billId: string;
-  idempotencyKey: string;
   executionMode: PayoutExecutionMode;
 }
 
+export type PayoutSettlementStatus = 'DISBURSED' | 'IN_FLIGHT';
+
 export interface AuthorizePayoutResponse {
   success: boolean;
+  status: PayoutSettlementStatus;
   mode: PayoutExecutionMode;
   isSimulated: boolean;
   billId: string;
-  batchId?: string;
+  batchId?: string | null;
+  message: string;
+  snapshot: StateSnapshot;
+}
+
+export interface SyncPayoutResponse {
+  success: boolean;
+  status: PayoutSettlementStatus;
+  billId: string;
+  batchId?: string | null;
   message: string;
   snapshot: StateSnapshot;
 }
@@ -132,6 +143,13 @@ export function authorizePayout(input: AuthorizePayoutInput): Promise<AuthorizeP
   });
 }
 
+export function syncPayout(billId: string): Promise<SyncPayoutResponse> {
+  return request<SyncPayoutResponse>('/api/payouts/sync', {
+    method: 'POST',
+    body: JSON.stringify({ billId }),
+  });
+}
+
 export function resetDemo(): Promise<ResetDemoResponse> {
   return request<ResetDemoResponse>('/api/reset', {
     method: 'POST',
@@ -155,36 +173,6 @@ export function draftReminder(
     body: JSON.stringify({ invoiceId }),
     signal,
   });
-}
-
-function uuidV4FromRandomValues(): string {
-  const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
-  return [
-    hex.slice(0, 4).join(''),
-    hex.slice(4, 6).join(''),
-    hex.slice(6, 8).join(''),
-    hex.slice(8, 10).join(''),
-    hex.slice(10, 16).join(''),
-  ].join('-');
-}
-
-export function createIdempotencyKey(): string {
-  const cryptoObj = globalThis.crypto;
-  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
-    return cryptoObj.randomUUID();
-  }
-  if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') {
-    return uuidV4FromRandomValues();
-  }
-  throw new ApiError(
-    0,
-    'CRYPTO_UNAVAILABLE',
-    'A secure random number generator is required to authorize payouts.',
-  );
 }
 
 export function getErrorMessage(error: unknown): string {

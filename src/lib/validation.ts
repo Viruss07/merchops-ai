@@ -10,12 +10,15 @@ export const invoiceIdBodySchema = z.object({
 
 export const payoutSchema = z.object({
   billId: z.string().min(1).max(100),
-  idempotencyKey: z.string().uuid(),
   confirmed: z.literal(true),
   executionMode: z
     .enum(['SIMULATION', 'PAYPAL_SANDBOX'])
     .optional()
     .default('SIMULATION'),
+});
+
+export const payoutSyncSchema = z.object({
+  billId: z.string().min(1).max(100),
 });
 
 export const resetSchema = z.object({

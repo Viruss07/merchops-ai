@@ -13,7 +13,7 @@ Small merchants struggle with fragmented working capital management: juggling la
 1. **Anticipates Cash Shortfalls**: Projects 30-day daily cash balances using pure deterministic arithmetic.
 2. **Accelerates Receivables**: AI drafts polite, context-aware payment reminders for overdue invoices. Payment links are simulated; live Invoicing/Orders integration is not implemented.
 3. **Protects Working Capital**: Enforces a non-negotiable safety reserve floor ($2,000.00), automatically blocking payouts that would trigger a liquidity breach.
-4. **Guarantees Human Control**: Outbound disbursements require a two-step merchant confirmation flow with UUIDv4 idempotency keys.
+4. **Guarantees Human Control**: Outbound disbursements require a two-step merchant confirmation flow with a deterministic per-bill PayPal request id.
 
 ---
 
@@ -37,10 +37,10 @@ Small merchants struggle with fragmented working capital management: juggling la
 - **Dynamic Reserve Guardrail**: Evaluates pending vendor disbursements against projected cash balance.
 - **Automated Breach Blocking**: Disallows payouts that breach the reserve floor (returns HTTP 403 `RESERVE_BREACH_BLOCKED`).
 - **Two-Step Authorization Flow**: Requires explicit liquidity impact review and checkbox confirmation (`confirmed: true` is enforced server-side).
-- **In-Process Idempotency State Machine**: UUID idempotency keys are validated with Zod and tracked in-process through `beginPayout -> IN_FLIGHT -> completePayout/failPayout`. The reserve check plus status transition is atomic within the Node process: a duplicate replay of a `SUCCEEDED` key returns the stored result, and concurrent requests cannot double-disburse. This is **not durable and not multi-instance safe** — keys reset on server restart.
+- **Payout Lifecycle State Machine**: The server derives a deterministic PayPal request id from `(bill id, action)` and tracks `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED` in-process. Approval reserves cash but never debits it. A PayPal batch acceptance is **not** settlement; only a confirmed `SUCCESS` (batch or item) debits the ledger. A timeout or unknown outcome stays `IN_FLIGHT` with the same key, so it cannot be retried. This is **not durable and not multi-instance safe** — state resets on server restart.
 - **Dual Execution Rails**:
   - *Simulation Rail (default)*: Instant local ledger settlement with audit logging.
-  - *Gated PayPal Sandbox Rail*: Implemented but **disabled unless the server env `PAYPAL_PAYOUTS_ENABLED=true`**. The browser/client cannot enable it. Strict origin lockdown (`https://api-m.sandbox.paypal.com`) applies. Live dispatch is implemented but **unverified**.
+  - *Gated PayPal Sandbox Rail*: Implemented but **disabled unless the server env `PAYPAL_PAYOUTS_ENABLED=true`**. The browser/client cannot enable it. Strict origin lockdown (`https://api-m.sandbox.paypal.com`) applies. Dispatch, batch polling, and webhook signature verification are implemented; a real end-to-end sandbox settlement remains **unverified** until credentials and evidence are supplied.
 
 ### 4. Operations & Audit Trail
 - **Chronological Ledger**: Tracks all balance updates, reminder approvals, simulated customer payments, and blocked/authorized payouts.
@@ -61,7 +61,7 @@ Small merchants struggle with fragmented working capital management: juggling la
 | **Testing** | Node.js Test Runner (`node:test`) + `tsx` | Unit tests for deterministic money/runway/policy logic. Live PayPal calls are never part of `npm test`. |
 | **Calculations** | Pure TypeScript Functions | 100% deterministic integer cents math (`src/lib/money.ts`, `src/lib/runway.ts`, `src/lib/payoutPolicy.ts`) |
 | **Persistence** | In-memory repository (demo) | State lives in a server-side singleton. PostgreSQL is planned but **not implemented**; state resets on server restart. |
-| **Payment Integration** | PayPal REST APIs (Sandbox) | Client Credentials OAuth (`/v1/oauth2/token`), Payouts (`/v1/payments/payouts`). Live rail gated by `PAYPAL_PAYOUTS_ENABLED` and unverified. |
+| **Payment Integration** | PayPal REST APIs (Sandbox) | Client Credentials OAuth (`/v1/oauth2/token`), Payouts dispatch (`POST /v1/payments/payouts`), batch status (`GET /v1/payments/payouts/{id}`), and webhook signature verification. Live rail gated by `PAYPAL_PAYOUTS_ENABLED` and still unverified. |
 | **AI Integration** | OpenRouter API | Model: `anthropic/claude-3.5-sonnet` with honest fallback template |
 
 ---
@@ -120,7 +120,7 @@ MerchOps AI meaningfully integrates **AG Grid Community** to deliver a high-dens
    DEMO_AS_OF=2026-11-03
 
    # Server-side gate for the live PayPal Sandbox payout rail (default: false).
-   # The browser cannot enable this. Live dispatch remains unverified.
+   # The browser cannot enable this. End-to-end sandbox settlement remains unverified.
    PAYPAL_PAYOUTS_ENABLED=false
 
    # Optional: extra protection for /api/reset in production.
@@ -132,10 +132,13 @@ MerchOps AI meaningfully integrates **AG Grid Community** to deliver a high-dens
    PAYPAL_CLIENT_ID="<your_sandbox_client_id>"
    PAYPAL_CLIENT_SECRET="<your_sandbox_client_secret>"
 
+   # Required to verify PayPal webhook signatures (rejects deliveries if unset).
+   PAYPAL_WEBHOOK_ID="<your_sandbox_webhook_id>"
+
    # OpenRouter AI API Key (optional — system gracefully uses fallback template if omitted)
    OPENROUTER_API_KEY="<your_openrouter_api_key>"
    ```
-   `AUTH_SECRET`, `DATABASE_URL`, and `PAYPAL_WEBHOOK_ID` are **RESERVED / NOT YET USED** (no auth, database persistence, or webhook receiver exists). `DEFAULT_MIN_RESERVE_CENTS` and `DEFAULT_FORECAST_DAYS` are consumed by the server.
+   `AUTH_SECRET` and `DATABASE_URL` are **RESERVED / NOT YET USED** (no auth or database persistence exists). `PAYPAL_WEBHOOK_ID` is consumed by the webhook verifier; without it, unverified webhooks are rejected. `DEFAULT_MIN_RESERVE_CENTS` and `DEFAULT_FORECAST_DAYS` are consumed by the server.
 
 4. **Run Lint, Typecheck, and Tests**:
    ```bash
@@ -163,7 +166,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on push and pull request: `npm
 
 ### Security Model (Current)
 
-- The server is the single source of truth. `GET /api/state` returns `{account, invoices, bills, auditLogs, capabilities: {paypalSandboxEnabled}}`; the browser does not import the in-memory store, and mutations return a fresh snapshot.
+- The server is the single source of truth. `GET /api/state` returns `{account, invoices, bills, auditLogs, capabilities: {paypalSandboxEnabled, payoutMode, verifiedBatchId}}`; the browser does not import the in-memory store, and mutations return a fresh snapshot.
 - All mutation routes enforce same-origin requests and Zod validation.
 - The live PayPal rail is a server-side decision: the client cannot enable it, and `PAYPAL_PAYOUTS_ENABLED` must be `true`.
 - `/api/reset` requires `{confirm: true}` plus a same-origin request, and in production a matching `x-demo-admin-token` header when `DEMO_ADMIN_TOKEN` is set.
@@ -197,11 +200,11 @@ In keeping with our strict standard of technical truthfulness, here is an exact 
 | **Deterministic Runway Engine** | **VERIFIED** | 100% deterministic code in integer cents; unit-tested. Bills matched by `dueDate` only, overdue/day-0 clamped to Day 1, includes PENDING/APPROVED/IN_FLIGHT, reports `minBalanceCents` and `firstBreachDeficitCents`. |
 | **Reserve Floor Enforcement** | **VERIFIED** | Enforces the $2,000 floor and blocks unsafe payouts with HTTP 403 `RESERVE_BREACH_BLOCKED`. |
 | **Two-Step Authorization** | **VERIFIED** | Merchant review + explicit confirmation; the API requires `confirmed: true`. |
-| **Idempotency Protection** | **IN-PROCESS ONLY** | UUID keys validated with Zod and tracked through `beginPayout -> IN_FLIGHT -> completePayout/failPayout`. Duplicate replays of a `SUCCEEDED` key return the stored result; concurrent requests cannot double-disburse within one process. **Not durable, not multi-instance safe**, and resets on server restart. |
+| **Idempotency Protection** | **IN-PROCESS ONLY** | Deterministic `PayPal-Request-Id` derived from `(bill id, action)`; retries reuse the same key. Lifecycle is `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED`. Duplicate replays and duplicate webhooks return the stored result; concurrent requests cannot double-disburse within one process. **Not durable, not multi-instance safe**, and resets on server restart. |
 | **PayPal Sandbox OAuth** | **UNVERIFIED / ASSUMED** | Client Credentials flow is implemented; no credential-backed HTTP verification is recorded in this repository. Manual script requires secrets. |
 | **PayPal Payouts OAuth Scope** | **UNVERIFIED / ASSUMED** | Payouts scope presence is not confirmed. A manual scope-check script exists but has not been run as part of verification. |
 | **Strict Sandbox Origin Guard** | **VERIFIED (STATIC)** | Only `https://api-m.sandbox.paypal.com` is permitted; any other configured origin is rejected before a token is requested. |
-| **Live PayPal Sandbox Payout Dispatch** | **IMPLEMENTED, UNVERIFIED** | Server-side gated by `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. Requires credentials. No recorded live dispatch has been verified. |
+| **Live PayPal Sandbox Payout Dispatch** | **IMPLEMENTED, UNVERIFIED** | Server-side gated by `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. Requires credentials. Includes batch polling and webhook reconciliation, but no real end-to-end sandbox settlement has been recorded yet. |
 | **Payout Simulation Mode** | **VERIFIED** | Local ledger settlement with audit logging; this is the default rail. |
 | **OpenRouter AI Reminder Drafts** | **FALLBACK WORKING / LIVE UNVERIFIED** | Fallback template fully functional and honestly labelled. Draft route is rate-limited and Zod-validated; a live OpenRouter key is not verified in production. |
 | **Customer Payment Simulation** | **SIMULATED** | Local ledger demonstration, attributed to `MERCHANT` (not `PAYPAL_WEBHOOK`). Clearly labelled with zero live money movement. |
@@ -210,7 +213,7 @@ In keeping with our strict standard of technical truthfulness, here is an exact 
 | **Authentication / User Accounts** | **NOT IMPLEMENTED** | No login, sessions, roles, or auth middleware. Same-origin checks are not authentication. |
 | **Tenant Isolation** | **NOT IMPLEMENTED** | Single demo merchant; no row-level or request-level tenancy. |
 | **Database Persistence** | **NOT IMPLEMENTED** | Prototype uses an in-memory repository. PostgreSQL is planned/reserved only. State resets on server restart. |
-| **PayPal Webhooks / Signature Verification** | **NOT IMPLEMENTED** | No webhook receiver or cryptographic verification exists. `PAYPAL_WEBHOOK_ID` is reserved/unused. |
+| **PayPal Webhooks / Signature Verification** | **IMPLEMENTED, UNVERIFIED** | `POST /api/paypal/webhook` verifies signatures through PayPal's verification endpoint and processes success/failure events idempotently. Requires `PAYPAL_WEBHOOK_ID`; no real PayPal webhook has been verified. |
 | **PayPal Invoicing / Orders APIs** | **NOT IMPLEMENTED** | Demo uses simulated checkout links; no live Invoicing or Orders integration. |
 | **Outbound Email Transport** | **NOT IMPLEMENTED** | Reminders are staged locally in the audit log; no SMTP/SES/SendGrid service is connected. |
 | **Multi-instance-safe Idempotency** | **NOT IMPLEMENTED** | Keys live in one Node process. Horizontal scaling or restarts would break deduplication. |

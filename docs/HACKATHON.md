@@ -9,7 +9,7 @@
 - **Early Review Checkpoint**: **November 5, 2026**
   - Original target: core database architecture, deterministic Runway calculation, working invoice list, and AI reminder drafting area. **Delivered without a database**: the prototype uses an in-memory repository.
 - **Final Submission Deadline**: **November 12, 2026 at 12:00 PM PST**
-  - Expected: Deployed application, deterministic Runway + Collections + Payouts demo, simulation rail by default, optional gated PayPal Sandbox payout rail, comprehensive README, and a polished 3-minute video walkthrough. Live webhooks, Invoicing/Orders APIs, auth, and database persistence are **not implemented**.
+  - Expected: Deployed application, deterministic Runway + Collections + Payouts demo, simulation rail by default, optional gated PayPal Sandbox payout rail, comprehensive README, and a polished 3-minute video walkthrough. Verified live webhooks, Invoicing/Orders APIs, auth, and database persistence are **not implemented**; a signature-verified webhook receiver exists but remains unverified against PayPal.
 
 ---
 
@@ -18,9 +18,9 @@
 | Evaluation Pillar | Hackathon Criterion | How MerchOps AI Delivers |
 |---|---|---|
 | **AI Innovation & Copilot Experience** | Meaningful AI application beyond trivial chat | MerchOps AI serves as an operational copilot. It drafts tone-adaptive reminders and translates deterministic 30-day projections into plain-English advice—while leaving math to deterministic code. |
-| **PayPal Ecosystem Depth** | Meaningful utilization of PayPal developer capabilities | Implements PayPal OAuth client-credentials and Sandbox Payouts payloads behind a server-side gate. The default rail is local simulation. Invoicing, Orders, and webhooks are **not implemented**. PayPal OAuth/scope and live dispatch remain **unverified**. |
+| **PayPal Ecosystem Depth** | Meaningful utilization of PayPal developer capabilities | Implements PayPal OAuth client-credentials, Sandbox Payouts dispatch, batch polling, and signature-verified webhook reconciliation behind a server-side gate. The default rail is local simulation. Invoicing and Orders are **not implemented**. PayPal OAuth/scope, live dispatch, and webhooks remain **unverified**. |
 | **Real-World Business Impact** | Tangible problem solving for merchants | Cash-flow pressure is a leading cause of small business failure. MerchOps AI provides early shortfall detection, accelerates receivables collection, and guards reserves against unplanned payouts. |
-| **Security & Financial Integrity** | Production-grade safety standards | Zero autonomous fund movement, integer-cent arithmetic, same-origin + Zod validation, a server-side live-rail gate, and an audit log. The audit log is **in-memory and not immutable**; there is **no authentication** and **no webhook verification**. |
+| **Security & Financial Integrity** | Production-grade safety standards | Zero autonomous fund movement, integer-cent arithmetic, same-origin + Zod validation, a server-side live-rail gate, deterministic request ids, and an audit log. The audit log is **in-memory and not immutable**; there is **no authentication**. Webhook signatures are verified, but the receiver is unverified against a live PayPal delivery. |
 | **Execution & Polish** | Smooth UX, responsive design, reliable demo | Next.js App Router, AG Grid for fast tabular data handling, deterministic `DEMO_AS_OF` clock, and server-authoritative `/api/state` snapshots. |
 
 ---
@@ -40,14 +40,14 @@
 
 ### Scene 3: Simulated Customer Payment (1:30 - 2:05)
 - **Visual**: Alex uses the **Simulate Pay** action for Apex Corp.
-- **System Action (SIMULATED)**: The local ledger marks the invoice paid and attributes the event to `MERCHANT`. **No PayPal webhook is involved**; webhooks are not implemented.
+- **System Action (SIMULATED)**: The local ledger marks the invoice paid and attributes the event to `MERCHANT`. **No PayPal webhook is involved** in this collection demo; the payout webhook receiver exists but is not exercised here.
 - **Result**: The dashboard updates: account balance rises to $5,700, and the Runway trajectory turns green.
 
 ### Scene 4: Protected Vendor Payout (2:05 - 2:45)
 - **Visual**: Alex navigates to **Payouts** to handle the upcoming $3,000 supplier bill.
 - **Narrative**: *"Now that working capital is restored, Alex reviews the supplier bill. MerchOps AI verifies that even after disbursing $3,000, the remaining $2,700 maintains the merchant's $2,000 safety reserve."*
-- **Action (SIMULATED by default)**: Alex clicks **Authorize Payout**. The payout is recorded on the local simulation rail with a UUID idempotency key. Replaying the key returns the stored result instead of paying twice.
-- **Live rail note**: A PayPal Sandbox dispatch is implemented but disabled unless the server env `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. Live dispatch remains **unverified**.
+- **Action (SIMULATED by default)**: Alex clicks **Authorize Payout**. The payout is recorded on the local simulation rail with a deterministic per-bill `PayPal-Request-Id`. Replaying the same request returns the stored result instead of paying twice.
+- **Live rail note**: A PayPal Sandbox dispatch is implemented but disabled unless the server env `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. Batch polling and webhook reconciliation are implemented, but a real end-to-end sandbox settlement remains **unverified**.
 
 ### Scene 5: Audit Trail & Conclusion (2:45 - 3:00)
 - **Visual**: Alex opens the **Audit Log** showing the sequence of recommendations, approvals, and simulated settlements.
@@ -69,7 +69,7 @@
 
 ### Honest Submission Notes
 
-- Default payout rail is **simulation**; live PayPal Sandbox dispatch is gated by `PAYPAL_PAYOUTS_ENABLED=true` and remains **unverified**.
-- PayPal webhooks/signature verification, Invoicing/Orders APIs, authentication, tenant isolation, database persistence, outbound email, and multi-instance-safe idempotency are **not implemented**.
+- Default payout rail is **simulation**; live PayPal Sandbox dispatch is gated by `PAYPAL_PAYOUTS_ENABLED=true` and remains **unverified**. Batch polling and signature-verified webhook reconciliation exist, but neither has been exercised against live PayPal.
+- Live-verified PayPal webhooks, Invoicing/Orders APIs, authentication, tenant isolation, database persistence, outbound email, and multi-instance-safe idempotency are **not implemented**. The webhook receiver and signature verification are implemented but unverified against PayPal.
 - In-memory state (including audit logs and idempotency keys) resets on server restart.
 

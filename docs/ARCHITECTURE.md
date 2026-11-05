@@ -8,8 +8,8 @@
 >
 > - **Runway Engine**: IMPLEMENTED & unit-tested (deterministic integer cents, deterministic `DEMO_AS_OF` clock).
 > - **Collections Workflow**: IMPLEMENTED (OpenRouter reminder drafting with honest fallback, server-side reminder approval, payment simulation). No outbound email.
-> - **Payouts Engine**: IMPLEMENTED (two-step approval, reserve floor guardrail, in-process idempotency state machine, strict Sandbox URL lockdown, simulation rail default). Live Sandbox dispatch is implemented but **unverified** and gated behind `PAYPAL_PAYOUTS_ENABLED=true`.
-> - **Persistence**: IN-MEMORY repository. There is **no PostgreSQL, no authentication/tenant guard, and no webhook receiver** in the current code. State resets on server restart.
+> - **Payouts Engine**: IMPLEMENTED (two-step approval, reserve floor guardrail, in-process payout lifecycle, deterministic `PayPal-Request-Id`, batch polling, verified webhook receiver, strict Sandbox URL lockdown, simulation rail default). Live Sandbox settlement is implemented but **unverified** and gated behind `PAYPAL_PAYOUTS_ENABLED=true`.
+> - **Persistence**: IN-MEMORY repository. There is **no PostgreSQL and no authentication/tenant guard**. The webhook receiver and its deduplication state are in-memory and reset on restart.
 > - **Audit Trail**: In-memory array with UUID IDs. It is **not immutable**.
 
 ---
@@ -32,7 +32,7 @@ flowchart TD
         Guards["Same-origin + Zod validation\n(all mutation routes)"]
         RunwayEng["Runway Engine\n(deterministic integer cents)"]
         Policy["Payout Policy\n(reserve floor check)"]
-        Idem["In-process idempotency\nbegin -> IN_FLIGHT -> complete/fail"]
+        Idem["In-process payout lifecycle\nAPPROVED -> IN_FLIGHT -> DISBURSED/FAILED"]
         Audit["In-memory audit log\n(UUID IDs)"]
         AI["/api/ai/draft-reminder\n(rate-limited, Zod-validated)"]
         Reminders["/api/reminders/approve\n(persisted in memory)"]
@@ -91,7 +91,11 @@ flowchart TD
   "invoices": [],
   "bills": [],
   "auditLogs": [],
-  "capabilities": { "paypalSandboxEnabled": false }
+  "capabilities": {
+    "paypalSandboxEnabled": false,
+    "payoutMode": "SIMULATION",
+    "verifiedBatchId": null
+  }
 }
 ```
 
@@ -113,7 +117,7 @@ flowchart TD
         RunwayEng["Runway Engine (Deterministic Math)"]
         CollEng["Collections Engine"]
         PayoutEng["Payouts Engine (Reserve Checker)"]
-        WebhookHandler["PayPal Webhook Receiver\n(PLANNED — signature verification)"]
+        WebhookHandler["PayPal Webhook Receiver\n(implemented; signature-verified)"]
         AuditService["Append-only Audit Service\n(PLANNED)"]
     end
 
@@ -126,13 +130,13 @@ flowchart TD
         Ledger["Accounts & Ledger (Integer Cents)"]
         Receivables["Invoices & Bills"]
         AuditDB["Audit Log (Append-Only)"]
-        WebhookDedupe["Webhook Event Log (Deduplication)"]
+        WebhookDedupe["Payout Outcome Deduplication\n(in-memory, idempotent)"]
     end
 
     subgraph PayPal["PayPal Sandbox Services"]
         PPInvoicing["PayPal Orders / Invoicing API\n(PLANNED)"]
         PPPayouts["PayPal Payouts API"]
-        PPWebhooks["PayPal Webhook Delivery\n(PLANNED)"]
+        PPWebhooks["PayPal Webhook Delivery\n(unverified live)"]
     end
 
     UI --> Auth
@@ -197,16 +201,17 @@ flowchart TD
 - **Two-step authorization**:
   - Merchant reviews the payout impact in the UI.
   - The API requires `confirmed: true`; a missing flag returns HTTP 400 `MERCHANT_APPROVAL_REQUIRED`.
-- **In-process idempotency state machine**:
-  - Keys must be valid UUIDs (Zod).
-  - A payout moves through `beginPayout -> IN_FLIGHT -> completePayout/failPayout`.
+- **In-process payout lifecycle**:
+  - The server derives a deterministic `PayPal-Request-Id` from `(bill id, action)`; retries reuse it.
+  - A payout moves through `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED`. Approval reserves cash without a debit; only a confirmed PayPal success debits the ledger.
+  - Batch acceptance is not settlement. `PENDING` returns HTTP 202 and stays `IN_FLIGHT`; unknown/timeout outcomes also stay `IN_FLIGHT` with the same key and cannot be retried. Duplicate completion and duplicate webhook events are idempotent.
   - The reserve check and status transition are atomic within the Node process.
-  - A duplicate replay of a `SUCCEEDED` key returns the stored result instead of disbursing again.
+  - A duplicate replay of a settled payout returns the stored result instead of disbursing again.
   - Concurrent requests within the same process cannot double-disburse.
   - **Limitation**: keys are held in process memory; this is not durable and not safe across multiple instances or restarts.
 - **Execution rails**:
   - **Simulation (default)**: local ledger settlement + audit log.
-  - **PayPal Sandbox (gated)**: only when the server env `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. The configured origin must be exactly `https://api-m.sandbox.paypal.com`. Live dispatch is implemented but **unverified**.
+  - **PayPal Sandbox (gated)**: only when the server env `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. The configured origin must be exactly `https://api-m.sandbox.paypal.com`. Dispatch, batch polling, and webhook verification are implemented, but a real end-to-end sandbox settlement remains **unverified**.
 
 ---
 
@@ -226,10 +231,13 @@ flowchart TD
 - The AI has no tool/API capability to call PayPal or mutate the store.
 - A dedicated prompt-sanitizer module is **planned**, not present.
 
-### 3.3 Webhook Verification & Replay Protection — NOT IMPLEMENTED
+### 3.3 Webhook Verification & Replay Protection — IMPLEMENTED, UNVERIFIED
 
-- There is no `/api/webhooks/paypal` route.
-- No signature verification, certificate handling, transmission-ID deduplication, or webhook event table exists.
+- `POST /api/paypal/webhook` verifies each delivery with PayPal's `/v1/notifications/verify-webhook-signature` endpoint using `PAYPAL_WEBHOOK_ID`.
+- Unconfigured webhook IDs return HTTP 503; missing or invalid signatures return HTTP 401. Unsupported events are acknowledged without changing state.
+- Success/failure processing is idempotent through the in-memory payout record; duplicate deliveries cannot debit twice.
+- No durable webhook event table or transmission-ID store exists, and no live PayPal webhook has been verified. Replay protection resets on server restart.
+- `POST /api/payouts/sync` provides a polling fallback for in-flight payouts.
 - `PAYPAL_WEBHOOK_ID` is reserved and unused.
 
 ### 3.4 Audit Logging — IN-MEMORY, NOT IMMUTABLE

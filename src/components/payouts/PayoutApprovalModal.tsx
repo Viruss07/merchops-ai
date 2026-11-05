@@ -12,16 +12,18 @@ import {
   ArrowRight,
   Key,
   Loader2,
+  Clock,
 } from 'lucide-react';
 import type { Bill, MerchantAccount, StateSnapshot } from '@/types';
 import { formatCentsToUSD } from '@/lib/money';
 import {
   ApiError,
   authorizePayout,
-  createIdempotencyKey,
   getErrorMessage,
   type PayoutExecutionMode,
+  type PayoutSettlementStatus,
 } from '@/lib/apiClient';
+import { derivePayoutRequestId } from '@/lib/idempotency';
 import { evaluatePayoutPolicy } from '@/lib/payoutPolicy';
 import { useFocusTrap } from '@/lib/useFocusTrap';
 
@@ -39,8 +41,6 @@ interface PayoutApprovalModalProps {
   onNavigateToCollections?: () => void;
 }
 
-const TERMINAL_RETRY_STATUSES = new Set([400, 403, 404, 409, 503]);
-
 export function PayoutApprovalModal({
   bill,
   account,
@@ -56,6 +56,7 @@ export function PayoutApprovalModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [outcomeStatus, setOutcomeStatus] = useState<PayoutSettlementStatus | null>(null);
 
   const idempotencyKeyRef = useRef('');
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,16 +68,11 @@ export function PayoutApprovalModal({
       setExecutionMode('SIMULATION');
       setError(null);
       setSuccessMessage(null);
+      setOutcomeStatus(null);
       setLoading(false);
-      try {
-        const nextKey = createIdempotencyKey();
-        idempotencyKeyRef.current = nextKey;
-        setIdempotencyKey(nextKey);
-      } catch (caught) {
-        idempotencyKeyRef.current = '';
-        setIdempotencyKey('');
-        setError(getErrorMessage(caught));
-      }
+      const nextKey = derivePayoutRequestId(billId);
+      idempotencyKeyRef.current = nextKey;
+      setIdempotencyKey(nextKey);
     } else if (autoCloseRef.current) {
       clearTimeout(autoCloseRef.current);
       autoCloseRef.current = null;
@@ -92,7 +88,7 @@ export function PayoutApprovalModal({
     };
   }, []);
 
-  const locked = loading || Boolean(successMessage);
+  const locked = loading;
 
   const handleClose = useCallback(() => {
     if (locked) return;
@@ -130,7 +126,7 @@ export function PayoutApprovalModal({
     }
     if (authorizationBlocked || locked) return;
     if (!idempotencyKeyRef.current) {
-      setError('A secure idempotency key is required before authorizing a payout.');
+      setError('The deterministic PayPal request id is unavailable.');
       return;
     }
 
@@ -140,20 +136,24 @@ export function PayoutApprovalModal({
     try {
       const response = await authorizePayout({
         billId: bill.id,
-        idempotencyKey: idempotencyKeyRef.current,
         executionMode,
       });
 
+      setOutcomeStatus(response.status);
       setSuccessMessage(response.message);
       onPayoutSuccess(
         response.billId,
         response.mode === 'PAYPAL_SANDBOX',
         response.snapshot,
       );
-      autoCloseRef.current = setTimeout(() => {
-        autoCloseRef.current = null;
-        onClose();
-      }, 1500);
+
+      // Only close automatically once the payout is definitively settled.
+      if (response.status === 'DISBURSED') {
+        autoCloseRef.current = setTimeout(() => {
+          autoCloseRef.current = null;
+          onClose();
+        }, 1500);
+      }
     } catch (caught) {
       setError(getErrorMessage(caught));
 
@@ -164,16 +164,6 @@ export function PayoutApprovalModal({
             executionMode === 'PAYPAL_SANDBOX',
             caught.snapshot,
           );
-        }
-        if (TERMINAL_RETRY_STATUSES.has(caught.status)) {
-          try {
-            const nextKey = createIdempotencyKey();
-            idempotencyKeyRef.current = nextKey;
-            setIdempotencyKey(nextKey);
-          } catch {
-            idempotencyKeyRef.current = '';
-            setIdempotencyKey('');
-          }
         }
       }
     } finally {
@@ -358,7 +348,7 @@ export function PayoutApprovalModal({
             <div className="flex items-center justify-between text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               <div className="flex items-center space-x-1.5 text-slate-600">
                 <Key className="h-3.5 w-3.5 text-slate-500" />
-                <span className="font-semibold">Idempotency Key:</span>
+                <span className="font-semibold">PayPal-Request-Id:</span>
               </div>
               <span className="font-mono text-[11px] text-slate-800 font-bold truncate max-w-[280px]">
                 {idempotencyKey || 'Unavailable'}
@@ -404,9 +394,10 @@ export function PayoutApprovalModal({
                       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="font-bold block text-xs">Live PayPal Sandbox API</span>
+                  <span className="font-bold block text-xs">PayPal Sandbox API</span>
                   <span className="text-[11px] text-slate-500 block mt-0.5">
-                    Dispatches batch to POST /v1/payments/payouts in PayPal Sandbox.
+                    Dispatches a batch to POST /v1/payments/payouts in PayPal Sandbox.
+                    Settlement requires confirmation.
                   </span>
                 </button>
               </div>
@@ -477,11 +468,23 @@ export function PayoutApprovalModal({
             <div
               role="status"
               aria-live="polite"
-              className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs text-emerald-800 space-y-1"
+              className={`rounded-xl border p-3.5 text-xs space-y-1 ${
+                outcomeStatus === 'IN_FLIGHT'
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-900'
+                  : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+              }`}
             >
               <div className="flex items-center space-x-1.5 font-bold">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                <span>Disbursement Approved & Executed</span>
+                {outcomeStatus === 'IN_FLIGHT' ? (
+                  <Clock className="h-4 w-4 text-indigo-600" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                )}
+                <span>
+                  {outcomeStatus === 'IN_FLIGHT'
+                    ? 'Payout Submitted — Awaiting Settlement'
+                    : 'Disbursement Confirmed & Recorded'}
+                </span>
               </div>
               <p>{successMessage}</p>
             </div>
@@ -522,10 +525,15 @@ export function PayoutApprovalModal({
                 <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                 <span>Authorizing Payout…</span>
               </>
+            ) : outcomeStatus === 'IN_FLIGHT' ? (
+              <>
+                <Clock className="h-4 w-4" />
+                <span>Awaiting Settlement</span>
+              </>
             ) : successMessage ? (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                <span>Disbursed!</span>
+                <span>Settled</span>
               </>
             ) : inFlight ? (
               <>
@@ -540,7 +548,7 @@ export function PayoutApprovalModal({
             ) : (
               <>
                 <Send className="h-4 w-4" />
-                <span>Authorize & Disburse {formatCentsToUSD(bill.amountCents)}</span>
+                <span>Authorize Payout {formatCentsToUSD(bill.amountCents)}</span>
               </>
             )}
           </button>

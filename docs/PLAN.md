@@ -16,7 +16,7 @@
 - **Runway Engine**: Deterministic integer-cent forecast from a deterministic clock (`DEMO_AS_OF`, default `2026-11-03`). Bills matched by `dueDate` only (no double counting), overdue/day-0 clamped to Day 1, PENDING/APPROVED/IN_FLIGHT included, `minBalanceCents` and `firstBreachDeficitCents` reported.
 - **Server-authoritative state**: `GET /api/state` returns `{account, invoices, bills, auditLogs, capabilities:{paypalSandboxEnabled}}`. The browser does not import the in-memory store; mutations return a fresh snapshot.
 - **In-memory repository**: Account, invoices, bills, audit logs, and idempotency keys live in a server-side singleton. State resets on server restart.
-- **Payouts**: Reserve check (HTTP 403 `RESERVE_BREACH_BLOCKED`), two-step `confirmed: true` enforcement, UUID idempotency keys, and an in-process `beginPayout -> IN_FLIGHT -> completePayout/failPayout` state machine. Duplicate replays of a `SUCCEEDED` key return the stored result.
+- **Payouts**: Reserve check (HTTP 403 `RESERVE_BREACH_BLOCKED`), two-step `confirmed: true` enforcement, deterministic per-bill `PayPal-Request-Id`, and an in-process `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED` lifecycle. Batch acceptance is not settlement; duplicate replays and duplicate webhooks are idempotent.
 - **Security controls**: Same-origin enforcement + Zod validation on all mutation routes; rate-limited, validated OpenRouter draft route; `/api/reset` requires `{confirm:true}` + same-origin (+ `x-demo-admin-token` in production when configured); live PayPal rail gated server-side by `PAYPAL_PAYOUTS_ENABLED=true`.
 - **Collections**: Reminder drafting with honest fallback, server-side approval at `POST /api/reminders/approve`, and simulated settlement attributed to `MERCHANT`.
 - **NOT implemented**: authentication/user accounts, tenant isolation, database persistence, PayPal webhooks/signature verification, Invoicing/Orders APIs, outbound email, multi-instance-safe idempotency.
@@ -77,19 +77,21 @@ Nov 1 - Nov 2        Nov 3 - Nov 4         Nov 5            Nov 6 - Nov 9       
 - [x] Vendor bill management view with AG Grid.
 - [x] Reserve-safe payout evaluator that blocks payouts breaching `minReserveCents`.
 - [x] Two-step merchant authorization interface (`confirmed: true` enforced server-side).
-- [x] PayPal Sandbox Payouts payload generation with UUID idempotency keys and in-process `IN_FLIGHT` state machine.
+- [x] PayPal Sandbox Payouts payload generation with deterministic request ids, batch polling, and an in-process payout lifecycle.
 - [ ] Live PayPal Sandbox dispatch verification (implemented but **unverified**; requires credentials + `PAYPAL_PAYOUTS_ENABLED=true`).
 
 ---
 
-### Phase 6: PayPal Sandbox Integration & Webhook Pipeline (NOT IMPLEMENTED)
+### Phase 6: PayPal Sandbox Integration & Webhook Pipeline (IMPLEMENTED, UNVERIFIED)
 *Goal: Real-time settlement and automated ledger reconciliation.*
 
 - [x] PayPal OAuth token client helper (used only on the gated sandbox rail).
-- [ ] **PLANNED**: Sandbox webhook listener endpoint (`/api/webhooks/paypal`) with signature validation.
-- [ ] **PLANNED**: Replay prevention via a durable webhook event table.
-- [ ] **PLANNED**: Handlers for `PAYMENT.CAPTURE.COMPLETED` and `INVOICING.INVOICE.PAID`.
-- [ ] **PLANNED**: automatic ledger update from webhooks; today settlement is simulated locally.
+- [x] Sandbox webhook listener (`POST /api/paypal/webhook`) with signature verification via `PAYPAL_WEBHOOK_ID`.
+- [x] Idempotent payout success/failure processing without a durable event table (resets on restart).
+- [x] Payout batch polling fallback (`POST /api/payouts/sync`).
+- [ ] **PLANNED**: Durable webhook event table and cross-instance replay prevention.
+- [ ] **PLANNED**: Handlers for collections events such as `PAYMENT.CAPTURE.COMPLETED` and `INVOICING.INVOICE.PAID`.
+- [ ] **UNVERIFIED**: End-to-end live sandbox settlement and real webhook delivery.
 
 ---
 
@@ -103,7 +105,7 @@ Nov 1 - Nov 2        Nov 3 - Nov 4         Nov 5            Nov 6 - Nov 9       
 
 ### Phase 8: Deployment & Demo Hardening (Planned)
 - [ ] **PLANNED**: Deploy Next.js application and PostgreSQL database to Render (no database exists yet).
-- [ ] **PLANNED**: Configure public webhook URL with PayPal Sandbox webhook simulator (no webhook receiver exists yet).
+- [ ] **PLANNED**: Configure a public webhook URL and `PAYPAL_WEBHOOK_ID` against the PayPal Sandbox webhook simulator (receiver exists; live delivery unverified).
 - [x] Deterministic demo scenario documented and reproducible via `DEMO_AS_OF`.
 - [ ] Record the end-to-end demo video and submit on the hackathon portal before Nov 12, 12:00 PM PST.
 

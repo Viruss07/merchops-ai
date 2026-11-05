@@ -76,7 +76,7 @@ The scenario runs on a deterministic clock: `DEMO_AS_OF` defaults to **2026-11-0
 4. **Simulate Customer Payment**:
    - Click **"Simulate Pay"** on the Apex Corp row.
    - The confirmation modal displays: *"Notice: This is a local ledger demonstration simulating customer settlement. No actual money movement or PayPal live transactions have occurred."*
-   - Click **"Confirm Settlement"**. The settlement is attributed to `MERCHANT` (not a PayPal webhook; webhooks are not implemented).
+   - Click **"Confirm Settlement"**. The settlement is attributed to `MERCHANT` (not a PayPal webhook; this collection demo does not exercise the payout webhook receiver).
 5. **Observe Instant Reconciliation**:
    - Apex Corp status updates to **Paid**.
    - Notice the **Cleared Cash** in the header jumps from `$4,200.00` to **`$5,700.00`** (`$4,200 + $1,500`).
@@ -100,7 +100,7 @@ The scenario runs on a deterministic clock: `DEMO_AS_OF` defaults to **2026-11-0
 3. **Click "Authorize Payout"**:
    - The **Two-Step Authorization Modal** opens.
    - Step 1: Merchant reviews recipient (`receivables@acmesupplies.test`), amount (`$3,000.00`), and projected post-payout balance (`$2,700.00`).
-   - Notice the unique **UUID idempotency key**. It is tracked in-process through `IN_FLIGHT` to `SUCCEEDED`; replaying the same key returns the stored result instead of paying twice.
+   - Notice the deterministic per-bill **PayPal-Request-Id**. It is tracked in-process through `APPROVED -> IN_FLIGHT -> DISBURSED`; replaying the same request returns the stored result instead of paying twice.
    - Step 2: Merchant checks the explicit confirmation box.
    - Click **"Authorize & Disburse $3,000.00"**.
 4. **Execution & Settlement (SIMULATED)**:
@@ -124,7 +124,7 @@ The scenario runs on a deterministic clock: `DEMO_AS_OF` defaults to **2026-11-0
    - `PAYOUT_BLOCKED_RESERVE_BREACH`: Initial unsafe payout attempt blocked by policy.
 2. **Honesty & Transparency Callout**:
    - Point to the in-memory demo notice:
-     *"This audit trail is an in-memory array with UUID IDs. It is not an immutable production ledger and resets on server restart. There is no PostgreSQL persistence, no authentication, and no webhook receiver in this prototype."*
+     *"This audit trail is an in-memory array with UUID IDs. It is not an immutable production ledger and resets on server restart. There is no PostgreSQL persistence and no authentication. The PayPal webhook receiver is implemented but unverified against a live delivery."*
 3. **Closing Summary**:
    > *"MerchOps AI empowers small merchants to anticipate cash crunches, accelerate receivables with AI drafts, and disburse payouts safely under reserve protection. Throughout the entire system, one non-negotiable rule holds: **AI proposes, rules decide. AI never independently moves money.**"*
 

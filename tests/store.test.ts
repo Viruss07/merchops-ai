@@ -17,28 +17,29 @@ test('store: payInvoice twice -> ALREADY_PAID', () => {
   }
 });
 
-test('store: beginPayout sets IN_FLIGHT and second begin with same key -> DUPLICATE_REQUEST', () => {
+test('store: beginPayout approves and reserves, then second begin with same key -> DUPLICATE_REQUEST', () => {
   const result1 = demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
   assert.equal(result1.ok, true);
   if (result1.ok) {
-    assert.equal(result1.bill.status, 'IN_FLIGHT');
+    assert.equal(result1.bill.status, 'APPROVED');
   }
 
   const result2 = demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
   assert.equal(result2.ok, false);
   if (!result2.ok) {
     assert.equal(result2.reason, 'DUPLICATE_REQUEST');
+    assert.equal(result2.outcome?.status, 'APPROVED');
   }
 });
 
-test('store: a second begin on the same bill with a different key -> IN_FLIGHT', () => {
+test('store: a second begin on the same approved bill with a different key -> APPROVAL_PENDING', () => {
   const result1 = demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
   assert.equal(result1.ok, true);
 
   const result2 = demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key2' });
   assert.equal(result2.ok, false);
   if (!result2.ok) {
-    assert.equal(result2.reason, 'IN_FLIGHT');
+    assert.equal(result2.reason, 'APPROVAL_PENDING');
   }
 });
 
@@ -70,11 +71,12 @@ test('store: in-flight payouts are reserved so concurrent authorizations cannot 
   }
 });
 
-test('store: completePayout marks DISBURSED, debits balance, stores SUCCEEDED outcome', () => {
+test('store: completePayout marks DISBURSED, debits balance once, stores SUCCEEDED outcome', () => {
   const snapshot = demoStore.getSnapshot();
   const balanceBefore = snapshot.account.clearedBalanceCents;
 
   demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' }); // $400, balance $4200, reserve $2000, post is $3800, OK
+  demoStore.markPayoutInFlight({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
   const result = demoStore.completePayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1', isRealPayPal: false, response: { id: '123' } });
 
   assert.equal(result.account.clearedBalanceCents, balanceBefore - 40000);
@@ -83,20 +85,59 @@ test('store: completePayout marks DISBURSED, debits balance, stores SUCCEEDED ou
 
   const outcome = demoStore.getIdempotencyOutcome('key1');
   assert.equal(outcome?.status, 'SUCCEEDED');
+
+  // Duplicate webhook/retry must not debit twice.
+  const replay = demoStore.completePayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1', isRealPayPal: false, response: { id: '123' } });
+  assert.equal(replay.account.clearedBalanceCents, balanceBefore - 40000);
 });
 
-test('store: failPayout restores PENDING and stores FAILED', () => {
+test('store: accepted-but-pending does not debit; failPayout marks FAILED without balance change', () => {
+  const balanceBefore = demoStore.getSnapshot().account.clearedBalanceCents;
   demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
+  demoStore.markPayoutInFlight({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
+  demoStore.markPayoutAccepted({
+    billId: 'bill-cloud-02',
+    idempotencyKey: 'key1',
+    batchId: 'BATCH-123',
+    paypalStatus: 'PENDING',
+    response: { batch_header: { payout_batch_id: 'BATCH-123' } },
+  });
+
+  const pending = demoStore.getSnapshot();
+  assert.equal(pending.account.clearedBalanceCents, balanceBefore);
+  assert.equal(pending.bills.find(b => b.id === 'bill-cloud-02')?.status, 'IN_FLIGHT');
+  assert.equal(demoStore.getPayoutRequestByBatchId('BATCH-123')?.status, 'IN_FLIGHT');
+
   const result = demoStore.failPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1', code: 'ERR', message: 'failed' });
 
   const bill = result.bills.find(b => b.id === 'bill-cloud-02');
-  assert.equal(bill?.status, 'PENDING');
+  assert.equal(bill?.status, 'FAILED');
+  assert.equal(result.account.clearedBalanceCents, balanceBefore);
 
   const outcome = demoStore.getIdempotencyOutcome('key1');
   assert.equal(outcome?.status, 'FAILED');
   if (outcome?.status === 'FAILED') {
     assert.equal(outcome.code, 'ERR');
   }
+});
+
+test('store: unknown outcome stays IN_FLIGHT and cannot be retried', () => {
+  demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
+  demoStore.markPayoutInFlight({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
+  const result = demoStore.markPayoutUnknown({
+    billId: 'bill-cloud-02',
+    idempotencyKey: 'key1',
+    code: 'PAYPAL_OUTCOME_UNKNOWN',
+    message: 'timeout',
+  });
+
+  const bill = result.bills.find(b => b.id === 'bill-cloud-02');
+  assert.equal(bill?.status, 'IN_FLIGHT');
+  assert.equal(demoStore.getIdempotencyOutcome('key1')?.status, 'IN_FLIGHT');
+
+  const retry = demoStore.beginPayout({ billId: 'bill-cloud-02', idempotencyKey: 'key1' });
+  assert.equal(retry.ok, false);
+  if (!retry.ok) assert.equal(retry.reason, 'DUPLICATE_REQUEST');
 });
 
 test('store: resetDemoData restores balance $4,200 and clears outcomes', () => {

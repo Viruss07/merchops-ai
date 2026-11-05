@@ -1,8 +1,17 @@
 'use client';
 
 import React, { useCallback, useState } from 'react';
-import { ShieldCheck, ShieldAlert, Send, Lock, ArrowRight, Clock } from 'lucide-react';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  Send,
+  Lock,
+  ArrowRight,
+  Clock,
+  RefreshCw,
+} from 'lucide-react';
 import { formatCentsToUSD } from '@/lib/money';
+import { ApiError, getErrorMessage, syncPayout } from '@/lib/apiClient';
 import { evaluatePayoutPolicy } from '@/lib/payoutPolicy';
 import type { Bill, MerchantAccount, StateSnapshot } from '@/types';
 import { PayoutApprovalModal } from '@/components/payouts/PayoutApprovalModal';
@@ -31,6 +40,8 @@ export function PayoutsView({
 }: PayoutsViewProps) {
   const [selectedBillForApproval, setSelectedBillForApproval] = useState<Bill | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [syncingBillId, setSyncingBillId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const currentBalance = account.clearedBalanceCents;
   const reserve = account.minReserveCents;
@@ -50,6 +61,26 @@ export function PayoutsView({
       onDisburseBill(billId, isRealPayPal, snapshot);
     },
     [onDisburseBill],
+  );
+
+  const handleSyncPayout = useCallback(
+    async (bill: Bill) => {
+      if (syncingBillId) return;
+      setSyncingBillId(bill.id);
+      setSyncError(null);
+      try {
+        const response = await syncPayout(bill.id);
+        onDisburseBill(bill.id, false, response.snapshot);
+      } catch (error) {
+        if (error instanceof ApiError && error.snapshot) {
+          onDisburseBill(bill.id, false, error.snapshot);
+        }
+        setSyncError(getErrorMessage(error));
+      } finally {
+        setSyncingBillId(null);
+      }
+    },
+    [onDisburseBill, syncingBillId],
   );
 
   const activeBills = bills
@@ -132,7 +163,8 @@ export function PayoutsView({
       )}
 
       {focusBill && focusBill.status === 'IN_FLIGHT' && (
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm flex items-start space-x-3">
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start space-x-3">
             <div className="rounded-xl bg-indigo-600 p-2.5 text-white shadow-md shadow-indigo-600/20 shrink-0">
               <Clock className="h-6 w-6" />
             </div>
@@ -142,11 +174,33 @@ export function PayoutsView({
                 {inFlightCount === 1
                   ? 'One vendor payout is currently being processed.'
                   : `${inFlightCount} vendor payouts are currently being processed.`}{' '}
-                Duplicate disbursement is locked until the in-flight payout settles.
+                The ledger is not debited until PayPal confirms settlement. Duplicate
+                disbursement is locked.
               </p>
             </div>
           </div>
-        )}
+          <button
+            type="button"
+            onClick={() => void handleSyncPayout(focusBill)}
+            disabled={syncingBillId === focusBill.id}
+            className="inline-flex items-center space-x-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition disabled:opacity-60 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${syncingBillId === focusBill.id ? 'animate-spin motion-reduce:animate-none' : ''}`}
+            />
+            <span>{syncingBillId === focusBill.id ? 'Checking PayPal…' : 'Sync PayPal Status'}</span>
+          </button>
+        </div>
+      )}
+
+      {syncError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800"
+        >
+          {syncError}
+        </div>
+      )}
 
       {focusBill &&
         focusBill.status !== 'IN_FLIGHT' &&
@@ -247,6 +301,8 @@ export function PayoutsView({
         currentBalance={currentBalance}
         reserve={reserve}
         onOpenApproval={handleOpenApproval}
+        onSyncPayout={handleSyncPayout}
+        syncingBillId={syncingBillId}
       />
 
       {/* Two-Step Payout Approval Modal */}

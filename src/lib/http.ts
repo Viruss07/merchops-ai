@@ -47,7 +47,8 @@ export function isSameOrigin(req: NextRequest): boolean {
 
   try {
     const parsed = new URL(origin);
-    return parsed.host === req.nextUrl.host;
+    const requestHost = req.headers.get('host') ?? req.nextUrl.host;
+    return parsed.host === requestHost;
   } catch {
     return false;
   }

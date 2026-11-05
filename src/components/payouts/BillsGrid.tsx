@@ -12,13 +12,25 @@ import type {
 import { formatCentsToUSD } from '@/lib/money';
 import { merchOpsTheme, noRowsOverlayTemplate } from '@/lib/agGrid';
 import type { Bill } from '@/types';
-import { ShieldCheck, ShieldAlert, CheckCircle2, Clock, Send, Lock, Search } from 'lucide-react';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  CheckCircle2,
+  Clock,
+  Send,
+  Lock,
+  Search,
+  RefreshCw,
+  XCircle,
+} from 'lucide-react';
 
 interface BillsGridProps {
   bills: Bill[];
   currentBalance: number;
   reserve: number;
   onOpenApproval: (bill: Bill) => void;
+  onSyncPayout: (bill: Bill) => void;
+  syncingBillId: string | null;
 }
 
 const ACTIVE_BILL_STATUSES: Bill['status'][] = ['PENDING', 'APPROVED', 'IN_FLIGHT'];
@@ -36,6 +48,8 @@ export function BillsGrid({
   currentBalance,
   reserve,
   onOpenApproval,
+  onSyncPayout,
+  syncingBillId,
 }: BillsGridProps) {
   const [quickFilterText, setQuickFilterText] = useState('');
 
@@ -180,6 +194,7 @@ export function BillsGrid({
         getQuickFilterText: (params: GetQuickFilterTextParams<Bill>) => {
           const bill = params.data;
           if (!bill) return '';
+          if (bill.status === 'FAILED') return 'Failed No funds moved';
           if (!ACTIVE_BILL_STATUSES.includes(bill.status)) return 'Settled';
           const postPayoutBalance = currentBalance - bill.amountCents;
           return postPayoutBalance < reserve
@@ -189,6 +204,7 @@ export function BillsGrid({
         valueGetter: (params: ValueGetterParams<Bill>) => {
           const bill = params.data;
           if (!bill) return '';
+          if (bill.status === 'FAILED') return 'Failed No funds moved';
           if (!ACTIVE_BILL_STATUSES.includes(bill.status)) return 'Settled';
           const postPayoutBalance = currentBalance - bill.amountCents;
           return postPayoutBalance < reserve ? 'Breaches Floor' : 'Reserve Safe';
@@ -201,6 +217,17 @@ export function BillsGrid({
           const wouldBreach = isActive && postPayoutBalance < reserve;
           const deficit = wouldBreach ? reserve - postPayoutBalance : 0;
           const buffer = isActive && !wouldBreach ? postPayoutBalance - reserve : 0;
+
+          if (bill.status === 'FAILED') {
+            return (
+              <div className="flex items-center h-full">
+                <span className="inline-flex items-center space-x-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-800">
+                  <XCircle className="h-3.5 w-3.5 text-rose-600" />
+                  <span>Failed — no funds moved</span>
+                </span>
+              </div>
+            );
+          }
 
           if (!isActive) {
             return (
@@ -255,13 +282,11 @@ export function BillsGrid({
               </div>
             );
           }
-          const postPayoutBalance = currentBalance - bill.amountCents;
-          const wouldBreach = postPayoutBalance < reserve;
-          if (wouldBreach) {
+          if (bill.status === 'FAILED') {
             return (
               <div className="flex items-center space-x-1 text-xs font-semibold text-rose-700 h-full">
-                <Lock className="h-3.5 w-3.5 shrink-0" />
-                <span>Blocked by Policy</span>
+                <XCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>Failed</span>
               </div>
             );
           }
@@ -278,6 +303,16 @@ export function BillsGrid({
               <div className="flex items-center space-x-1 text-xs font-semibold text-blue-700 h-full">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 <span>Approved</span>
+              </div>
+            );
+          }
+          const postPayoutBalance = currentBalance - bill.amountCents;
+          const wouldBreach = postPayoutBalance < reserve;
+          if (wouldBreach) {
+            return (
+              <div className="flex items-center space-x-1 text-xs font-semibold text-rose-700 h-full">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                <span>Blocked by Policy</span>
               </div>
             );
           }
@@ -304,6 +339,17 @@ export function BillsGrid({
           const postPayoutBalance = currentBalance - bill.amountCents;
           const wouldBreach = isActive && postPayoutBalance < reserve;
 
+          if (bill.status === 'FAILED') {
+            return (
+              <div className="flex items-center h-full">
+                <span className="inline-flex items-center space-x-1 text-xs font-semibold text-rose-700">
+                  <XCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>Failed</span>
+                </span>
+              </div>
+            );
+          }
+
           if (!isActive) {
             return (
               <div className="flex items-center h-full">
@@ -316,12 +362,19 @@ export function BillsGrid({
           }
 
           if (bill.status === 'IN_FLIGHT') {
+            const syncing = syncingBillId === bill.id;
             return (
               <div className="flex items-center h-full">
-                <span className="inline-flex items-center space-x-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                  <Clock className="h-3 w-3 shrink-0" />
-                  <span>In Flight (Locked)</span>
-                </span>
+                <button
+                  type="button"
+                  onClick={() => onSyncPayout(bill)}
+                  disabled={syncing}
+                  aria-label={`Sync PayPal status for ${bill.vendorName}`}
+                  className="inline-flex items-center space-x-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <RefreshCw className={`h-3 w-3 shrink-0 ${syncing ? 'animate-spin motion-reduce:animate-none' : ''}`} />
+                  <span>{syncing ? 'Checking…' : 'Sync Status'}</span>
+                </button>
               </div>
             );
           }
@@ -358,7 +411,7 @@ export function BillsGrid({
         },
       },
     ],
-    [currentBalance, reserve, onOpenApproval],
+    [currentBalance, reserve, onOpenApproval, onSyncPayout, syncingBillId],
   );
 
   const defaultColDef = useMemo<ColDef<Bill>>(

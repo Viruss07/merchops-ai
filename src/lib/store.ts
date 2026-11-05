@@ -128,10 +128,21 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   },
 ];
 
-export type IdempotencyOutcome =
-  | { status: 'IN_FLIGHT' }
-  | { status: 'SUCCEEDED'; response: unknown }
-  | { status: 'FAILED'; code: string; message: string };
+export type PayoutExecutionMode = 'SIMULATION' | 'PAYPAL_SANDBOX';
+
+export interface PayoutRequestRecord {
+  status: 'APPROVED' | 'IN_FLIGHT' | 'SUCCEEDED' | 'FAILED';
+  billId: string;
+  idempotencyKey: string;
+  executionMode: PayoutExecutionMode;
+  paypalBatchId?: string;
+  paypalStatus?: string;
+  response?: unknown;
+  code?: string;
+  message?: string;
+}
+
+export type IdempotencyOutcome = PayoutRequestRecord;
 
 interface DemoStoreState {
   account: MerchantAccount;
@@ -257,38 +268,42 @@ export const demoStore = {
     };
   },
 
-  beginPayout(input: { billId: string; idempotencyKey: string }):
+  beginPayout(input: {
+    billId: string;
+    idempotencyKey: string;
+    executionMode?: PayoutExecutionMode;
+  }):
     | { ok: true; bill: Bill; postPayoutBalanceCents: number; snapshot: StateSnapshot }
     | {
         ok: false;
-        reason: 'NOT_FOUND' | 'ALREADY_DISBURSED' | 'IN_FLIGHT' | 'DUPLICATE_REQUEST' | 'RESERVE_BREACH' | 'INVALID_AMOUNT';
+        reason:
+          | 'NOT_FOUND'
+          | 'ALREADY_DISBURSED'
+          | 'IN_FLIGHT'
+          | 'APPROVAL_PENDING'
+          | 'PAYOUT_FAILED'
+          | 'DUPLICATE_REQUEST'
+          | 'RESERVE_BREACH'
+          | 'INVALID_AMOUNT';
         outcome?: IdempotencyOutcome;
         deficitCents?: number;
         postPayoutBalanceCents?: number;
       } {
-    // Check idempotency key first
     const existingOutcome = storeState.idempotencyMap.get(input.idempotencyKey);
     if (existingOutcome) {
-      if (existingOutcome.status === 'IN_FLIGHT') {
-        return {
-          ok: false,
-          reason: 'DUPLICATE_REQUEST',
-          outcome: existingOutcome,
-        };
-      }
-      if (existingOutcome.status === 'SUCCEEDED' || existingOutcome.status === 'FAILED') {
-        return {
-          ok: false,
-          reason: 'DUPLICATE_REQUEST',
-          outcome: existingOutcome,
-        };
-      }
+      return {
+        ok: false,
+        reason: 'DUPLICATE_REQUEST',
+        outcome: existingOutcome,
+      };
     }
 
     const bill = storeState.bills.find((b) => b.id === input.billId);
     if (!bill) return { ok: false, reason: 'NOT_FOUND' };
     if (bill.status === 'DISBURSED') return { ok: false, reason: 'ALREADY_DISBURSED' };
     if (bill.status === 'IN_FLIGHT') return { ok: false, reason: 'IN_FLIGHT' };
+    if (bill.status === 'APPROVED') return { ok: false, reason: 'APPROVAL_PENDING' };
+    if (bill.status === 'FAILED') return { ok: false, reason: 'PAYOUT_FAILED' };
 
     if (!isValidCents(bill.amountCents) || bill.amountCents <= 0) {
       return { ok: false, reason: 'INVALID_AMOUNT' };
@@ -298,10 +313,9 @@ export const demoStore = {
     // pass this check against the same cleared balance and jointly breach the
     // reserve when both complete.
     const inFlightCents = storeState.bills
-      .filter((b) => b.status === 'IN_FLIGHT')
+      .filter((b) => b.status === 'IN_FLIGHT' || b.status === 'APPROVED')
       .reduce((sum, b) => sum + b.amountCents, 0);
 
-    // Check reserve breach
     const postPayoutBalanceCents =
       storeState.account.clearedBalanceCents - inFlightCents - bill.amountCents;
     if (postPayoutBalanceCents < storeState.account.minReserveCents) {
@@ -323,9 +337,23 @@ export const demoStore = {
       };
     }
 
-    // On success set bill.status='IN_FLIGHT', record outcome IN_FLIGHT
-    bill.status = 'IN_FLIGHT';
-    storeState.idempotencyMap.set(input.idempotencyKey, { status: 'IN_FLIGHT' });
+    // Approval is a distinct state. It reserves cash but does not move money.
+    bill.status = 'APPROVED';
+    storeState.idempotencyMap.set(input.idempotencyKey, {
+      status: 'APPROVED',
+      billId: bill.id,
+      idempotencyKey: input.idempotencyKey,
+      executionMode: input.executionMode ?? 'SIMULATION',
+    });
+    storeState.auditLogs.unshift({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor: 'MERCHANT',
+      action: 'PAYOUT_APPROVED',
+      details: `Merchant approved payout to ${bill.vendorName} (${bill.billNumber}); funds reserved, no money moved yet.`,
+      amountCents: bill.amountCents,
+      isSimulated: true,
+    });
 
     return {
       ok: true,
@@ -335,26 +363,116 @@ export const demoStore = {
     };
   },
 
-  completePayout(input: { billId: string; idempotencyKey: string; isRealPayPal: boolean; externalRef?: string; response: unknown }): StateSnapshot {
+  markPayoutInFlight(input: { billId: string; idempotencyKey: string }): StateSnapshot {
     const bill = storeState.bills.find((b) => b.id === input.billId);
-    if (!bill || bill.status !== 'IN_FLIGHT') {
+    const request = storeState.idempotencyMap.get(input.idempotencyKey);
+
+    if (!bill || !request || request.billId !== bill.id) {
+      throw new Error('Invalid payout state');
+    }
+
+    if (bill.status === 'IN_FLIGHT' && request.status === 'IN_FLIGHT') {
+      return this.getSnapshot();
+    }
+
+    if (bill.status !== 'APPROVED' || request.status !== 'APPROVED') {
+      throw new Error('Invalid payout state');
+    }
+
+    bill.status = 'IN_FLIGHT';
+    request.status = 'IN_FLIGHT';
+
+    storeState.auditLogs.unshift({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor: 'MERCHANT',
+      action: 'PAYOUT_IN_FLIGHT',
+      details: `Payout to ${bill.vendorName} (${bill.billNumber}) is in flight. Balance is reserved but not debited until settlement is confirmed.`,
+      amountCents: bill.amountCents,
+      isSimulated: true,
+    });
+
+    return this.getSnapshot();
+  },
+
+  markPayoutAccepted(input: {
+    billId: string;
+    idempotencyKey: string;
+    batchId: string;
+    paypalStatus: string;
+    response: unknown;
+  }): StateSnapshot {
+    const bill = storeState.bills.find((b) => b.id === input.billId);
+    const request = storeState.idempotencyMap.get(input.idempotencyKey);
+
+    if (!bill || !request || request.billId !== bill.id) {
+      throw new Error('Invalid payout state');
+    }
+    if (bill.status !== 'IN_FLIGHT' || request.status !== 'IN_FLIGHT') {
+      throw new Error('Invalid payout state');
+    }
+
+    request.paypalBatchId = input.batchId;
+    request.paypalStatus = input.paypalStatus;
+    request.response = input.response;
+
+    storeState.auditLogs.unshift({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor: 'SYSTEM',
+      action: 'PAYOUT_ACCEPTED_PAYPAL',
+      details: `PayPal Sandbox accepted payout batch ${input.batchId} for ${bill.vendorName} (${bill.billNumber}) with status ${input.paypalStatus}. Funds are not yet confirmed settled.`,
+      amountCents: bill.amountCents,
+      isSimulated: false,
+    });
+
+    return this.getSnapshot();
+  },
+
+  completePayout(input: {
+    billId: string;
+    idempotencyKey: string;
+    isRealPayPal: boolean;
+    externalRef?: string;
+    response: unknown;
+    actor?: AuditLogEntry['actor'];
+  }): StateSnapshot {
+    const bill = storeState.bills.find((b) => b.id === input.billId);
+    const request = storeState.idempotencyMap.get(input.idempotencyKey);
+
+    if (!bill || !request || request.billId !== bill.id) {
+      throw new Error('Invalid payout state');
+    }
+
+    // Duplicate webhooks and retries must not debit twice.
+    if (bill.status === 'DISBURSED' && request.status === 'SUCCEEDED') {
+      return this.getSnapshot();
+    }
+
+    if (bill.status !== 'IN_FLIGHT' || request.status !== 'IN_FLIGHT') {
       throw new Error('Invalid payout state');
     }
 
     bill.status = 'DISBURSED';
     storeState.account.clearedBalanceCents -= bill.amountCents;
 
+    request.status = 'SUCCEEDED';
+    request.response = input.response;
+    if (input.externalRef) {
+      request.paypalBatchId = input.externalRef;
+    }
+
     storeState.auditLogs.unshift({
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      actor: 'MERCHANT',
+      actor: input.actor ?? 'MERCHANT',
       action: input.isRealPayPal ? 'PAYOUT_DISBURSED_PAYPAL' : 'PAYOUT_DISBURSED_SIMULATED',
-      details: `Payout to ${bill.vendorName} (${bill.billNumber}) authorized and disbursed (-$${(bill.amountCents / 100).toFixed(2)}).`,
+      details: input.isRealPayPal
+        ? `PayPal Sandbox confirmed payout batch ${input.externalRef ?? 'unknown'} to ${bill.vendorName} (${bill.billNumber}); ledger debited -$${(bill.amountCents / 100).toFixed(2)}.`
+        : `Payout to ${bill.vendorName} (${bill.billNumber}) authorized and disbursed (-$${(bill.amountCents / 100).toFixed(2)}).`,
       amountCents: bill.amountCents,
       isSimulated: !input.isRealPayPal,
     });
-
-    storeState.idempotencyMap.set(input.idempotencyKey, { status: 'SUCCEEDED', response: input.response });
 
     if (input.isRealPayPal && input.externalRef) {
       storeState.account.payoutVerification = {
@@ -366,27 +484,104 @@ export const demoStore = {
     return this.getSnapshot();
   },
 
-  failPayout(input: { billId: string; idempotencyKey: string; code: string; message: string }): StateSnapshot {
+  failPayout(input: {
+    billId: string;
+    idempotencyKey: string;
+    code: string;
+    message: string;
+    isRealPayPal?: boolean;
+    externalRef?: string;
+    actor?: AuditLogEntry['actor'];
+  }): StateSnapshot {
     const bill = storeState.bills.find((b) => b.id === input.billId);
-    if (!bill || bill.status !== 'IN_FLIGHT') {
+    const request = storeState.idempotencyMap.get(input.idempotencyKey);
+
+    if (!bill || !request || request.billId !== bill.id) {
       throw new Error('Invalid payout state');
     }
 
-    bill.status = 'PENDING';
+    // Never regress a settled payout from a stale failure event.
+    if (bill.status === 'DISBURSED' && request.status === 'SUCCEEDED') {
+      return this.getSnapshot();
+    }
+
+    if (bill.status !== 'IN_FLIGHT' && bill.status !== 'APPROVED') {
+      throw new Error('Invalid payout state');
+    }
+
+    bill.status = 'FAILED';
+
+    request.status = 'FAILED';
+    request.code = input.code;
+    request.message = input.message;
+    if (input.externalRef) {
+      request.paypalBatchId = input.externalRef;
+    }
 
     storeState.auditLogs.unshift({
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      actor: 'MERCHANT',
+      actor: input.actor ?? 'MERCHANT',
       action: 'PAYOUT_FAILED',
-      details: `Payout to ${bill.vendorName} (${bill.billNumber}) failed: ${input.message}`,
+      details: `Payout to ${bill.vendorName} (${bill.billNumber}) failed: ${input.message} No ledger debit was applied.`,
       amountCents: bill.amountCents,
-      isSimulated: true,
+      isSimulated: !input.isRealPayPal,
     });
 
-    storeState.idempotencyMap.set(input.idempotencyKey, { status: 'FAILED', code: input.code, message: input.message });
+    return this.getSnapshot();
+  },
+
+  markPayoutUnknown(input: {
+    billId: string;
+    idempotencyKey: string;
+    code: string;
+    message: string;
+    paypalBatchId?: string;
+    paypalStatus?: string;
+  }): StateSnapshot {
+    const bill = storeState.bills.find((b) => b.id === input.billId);
+    const request = storeState.idempotencyMap.get(input.idempotencyKey);
+
+    if (!bill || !request || request.billId !== bill.id) {
+      throw new Error('Invalid payout state');
+    }
+
+    if (bill.status === 'DISBURSED' || bill.status === 'FAILED') {
+      return this.getSnapshot();
+    }
+
+    // Unknown is not failure. Keep the bill reserved and in flight so it cannot
+    // be retried with a fresh payout while PayPal may still settle it.
+    request.code = input.code;
+    request.message = input.message;
+    if (input.paypalBatchId) request.paypalBatchId = input.paypalBatchId;
+    if (input.paypalStatus) request.paypalStatus = input.paypalStatus;
+
+    storeState.auditLogs.unshift({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor: 'SYSTEM',
+      action: 'PAYOUT_OUTCOME_UNKNOWN',
+      details: `Payout to ${bill.vendorName} (${bill.billNumber}) has an unconfirmed outcome: ${input.message} The bill remains in flight and must be reconciled.`,
+      amountCents: bill.amountCents,
+      isSimulated: false,
+    });
 
     return this.getSnapshot();
+  },
+
+  getPayoutRequestByBillId(billId: string): IdempotencyOutcome | undefined {
+    for (const request of storeState.idempotencyMap.values()) {
+      if (request.billId === billId) return request;
+    }
+    return undefined;
+  },
+
+  getPayoutRequestByBatchId(batchId: string): IdempotencyOutcome | undefined {
+    for (const request of storeState.idempotencyMap.values()) {
+      if (request.paypalBatchId === batchId) return request;
+    }
+    return undefined;
   },
 
   getIdempotencyOutcome(key: string): IdempotencyOutcome | undefined {

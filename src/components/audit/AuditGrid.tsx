@@ -37,6 +37,11 @@ const ACTOR_LABELS: Record<AuditLogEntry['actor'], string> = {
 };
 
 const ACTION_LABELS: Record<string, string> = {
+  PAYOUT_APPROVED: 'Payout Approved',
+  PAYOUT_IN_FLIGHT: 'Payout In Flight',
+  PAYOUT_ACCEPTED_PAYPAL: 'PayPal Accepted',
+  PAYOUT_OUTCOME_UNKNOWN: 'Outcome Unknown',
+  PAYOUT_FAILED: 'Payout Failed',
   PAYOUT_DISBURSED_SIMULATED: 'Simulated Payout',
   PAYOUT_DISBURSED_PAYPAL: 'PayPal Payout',
   PAYOUT_BLOCKED_RESERVE_BREACH: 'Blocked (Reserve)',
@@ -89,11 +94,34 @@ function renderActionBadge(action: string) {
           <span>Simulated Payout</span>
         </span>
       );
+    case 'PAYOUT_APPROVED':
+      return (
+        <span className="inline-flex items-center space-x-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-900 border border-blue-200">
+          <CheckCircle2 className="h-3 w-3 text-blue-700" />
+          <span>Payout Approved</span>
+        </span>
+      );
+    case 'PAYOUT_IN_FLIGHT':
+    case 'PAYOUT_ACCEPTED_PAYPAL':
+      return (
+        <span className="inline-flex items-center space-x-1 rounded-md bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-900 border border-indigo-300">
+          <Clock className="h-3 w-3 text-indigo-700" />
+          <span>{action === 'PAYOUT_IN_FLIGHT' ? 'Payout In Flight' : 'PayPal Accepted'}</span>
+        </span>
+      );
     case 'PAYOUT_DISBURSED_PAYPAL':
       return (
         <span className="inline-flex items-center space-x-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-900 border border-emerald-300">
           <CheckCircle2 className="h-3 w-3 text-emerald-700" />
-          <span>PayPal Payout</span>
+          <span>PayPal Payout Settled</span>
+        </span>
+      );
+    case 'PAYOUT_FAILED':
+    case 'PAYOUT_OUTCOME_UNKNOWN':
+      return (
+        <span className="inline-flex items-center space-x-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-900 border border-rose-300">
+          <ShieldAlert className="h-3 w-3 text-rose-700" />
+          <span>{action === 'PAYOUT_FAILED' ? 'Payout Failed' : 'Outcome Unknown'}</span>
         </span>
       );
     case 'PAYOUT_BLOCKED_RESERVE_BREACH':

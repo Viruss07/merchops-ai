@@ -11,7 +11,9 @@ export type PayPalErrorCode =
   | 'PAYPAL_ENDPOINT_INVALID'
   | 'PAYPAL_AUTH_FAILED'
   | 'PAYPAL_API_REJECTED'
-  | 'PAYPAL_OUTCOME_UNKNOWN';
+  | 'PAYPAL_OUTCOME_UNKNOWN'
+  | 'PAYPAL_WEBHOOK_NOT_CONFIGURED'
+  | 'PAYPAL_WEBHOOK_INVALID';
 
 export class PayPalError extends Error {
   readonly code: PayPalErrorCode;
@@ -255,4 +257,202 @@ export async function dispatchPayout(
       'PayPal Payouts API response could not be parsed, so the payout outcome is unconfirmed.'
     );
   }
+}
+
+
+export type PayoutBatchOutcome = 'SUCCESS' | 'FAILED' | 'PENDING';
+
+export interface ParsedPayoutBatch {
+  batchId: string | null;
+  batchStatus: string | null;
+  itemStatuses: string[];
+  outcome: PayoutBatchOutcome;
+}
+
+const FAILED_ITEM_STATUSES = new Set([
+  'FAILED',
+  'DENIED',
+  'BLOCKED',
+  'RETURNED',
+  'REVERSED',
+  'REFUNDED',
+]);
+
+const FAILED_BATCH_STATUSES = new Set([
+  'DENIED',
+  'FAILED',
+  'CANCELED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+
+export function parsePayoutBatch(payload: unknown): ParsedPayoutBatch {
+  if (typeof payload !== 'object' || payload === null) {
+    return { batchId: null, batchStatus: null, itemStatuses: [], outcome: 'PENDING' };
+  }
+
+  const root = payload as Record<string, unknown>;
+  const batchHeader =
+    typeof root.batch_header === 'object' && root.batch_header !== null
+      ? (root.batch_header as Record<string, unknown>)
+      : null;
+
+  const rawBatchId = batchHeader?.payout_batch_id;
+  const batchId = typeof rawBatchId === 'string' && rawBatchId.length > 0 ? rawBatchId : null;
+
+  const rawBatchStatus = batchHeader?.batch_status;
+  const batchStatus =
+    typeof rawBatchStatus === 'string' ? rawBatchStatus.toUpperCase() : null;
+
+  const rawItems = Array.isArray(root.items) ? root.items : [];
+  const itemStatuses: string[] = [];
+  for (const item of rawItems) {
+    if (typeof item !== 'object' || item === null) continue;
+    const status = (item as Record<string, unknown>).transaction_status;
+    if (typeof status === 'string') {
+      itemStatuses.push(status.toUpperCase());
+    }
+  }
+
+  let outcome: PayoutBatchOutcome = 'PENDING';
+  if (batchStatus === 'SUCCESS' || itemStatuses.includes('SUCCESS')) {
+    outcome = 'SUCCESS';
+  } else if (
+    (batchStatus !== null && FAILED_BATCH_STATUSES.has(batchStatus)) ||
+    itemStatuses.some((status) => FAILED_ITEM_STATUSES.has(status))
+  ) {
+    outcome = 'FAILED';
+  }
+
+  return { batchId, batchStatus, itemStatuses, outcome };
+}
+
+export async function getPayoutBatch(batchId: string): Promise<unknown> {
+  if (!/^[A-Za-z0-9-]{1,100}$/.test(batchId)) {
+    throw new PayPalError('PAYPAL_API_REJECTED', 'Invalid PayPal batch id.');
+  }
+
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/v1/payments/payouts/${encodeURIComponent(batchId)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal batch status could not be retrieved due to a timeout or network failure.'
+    );
+  }
+
+  if (!response.ok) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal batch status request failed with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal batch status response could not be parsed.'
+    );
+  }
+}
+
+export interface PayPalWebhookHeaders {
+  authAlgo: string | null;
+  certUrl: string | null;
+  transmissionId: string | null;
+  transmissionSig: string | null;
+  transmissionTime: string | null;
+}
+
+export async function verifyWebhookSignature(
+  event: unknown,
+  headers: PayPalWebhookHeaders
+): Promise<boolean> {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+  if (!webhookId) {
+    throw new PayPalError(
+      'PAYPAL_WEBHOOK_NOT_CONFIGURED',
+      'PAYPAL_WEBHOOK_ID is not configured; unverified webhooks are rejected.'
+    );
+  }
+
+  if (
+    !headers.authAlgo ||
+    !headers.certUrl ||
+    !headers.transmissionId ||
+    !headers.transmissionSig ||
+    !headers.transmissionTime
+  ) {
+    throw new PayPalError(
+      'PAYPAL_WEBHOOK_INVALID',
+      'PayPal webhook signature headers are missing.'
+    );
+  }
+
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/v1/notifications/verify-webhook-signature`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        auth_algo: headers.authAlgo,
+        cert_url: headers.certUrl,
+        transmission_id: headers.transmissionId,
+        transmission_sig: headers.transmissionSig,
+        transmission_time: headers.transmissionTime,
+        webhook_id: webhookId,
+        webhook_event: event,
+      }),
+      signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal webhook verification request failed or timed out.'
+    );
+  }
+
+  if (!response.ok) {
+    throw new PayPalError(
+      'PAYPAL_WEBHOOK_INVALID',
+      `PayPal webhook verification failed with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal webhook verification response could not be parsed.'
+    );
+  }
+
+  if (typeof data !== 'object' || data === null) return false;
+  return (data as Record<string, unknown>).verification_status === 'SUCCESS';
 }

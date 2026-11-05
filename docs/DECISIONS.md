@@ -82,15 +82,15 @@ This document records the architectural and design decisions made for MerchOps A
 
 ### ADR-007: Webhook Signature Verification and Idempotency Protection
 
-- **Status**: Split — **Webhooks PLANNED (not implemented); Idempotency Implemented (in-process only)**
+- **Status**: Split — **Webhooks implemented but UNVERIFIED; Idempotency implemented in-process only**
 - **Context**: Webhooks can be intercepted, forged, duplicated, or delivered out of order by payment networks.
 - **Decision**:
-  1. **PLANNED**: Every incoming webhook request to `/api/webhooks/paypal` must pass cryptographic signature verification via PayPal's verification endpoint. No such route exists today.
-  2. **PLANNED**: Processed webhook event IDs would be stored in a deduplication table. No webhook event table exists today.
-  3. **IMPLEMENTED (in-process)**: Every outbound payout API call attaches a client-generated UUID idempotency key. A `beginPayout -> IN_FLIGHT -> completePayout/failPayout` state machine prevents double-disbursement within one process, and duplicate replays of a `SUCCEEDED` key return the stored result.
+  1. **IMPLEMENTED (unverified)**: `POST /api/paypal/webhook` verifies every delivery through PayPal's verification endpoint using `PAYPAL_WEBHOOK_ID`. Unconfigured IDs are rejected with HTTP 503 and missing/invalid signatures with HTTP 401. No live PayPal delivery has been verified yet.
+  2. **IMPLEMENTED (in-process)**: Payout success/failure events are deduplicated by the payout record, so duplicate webhook deliveries cannot debit twice. There is no durable webhook event table; deduplication resets on restart.
+  3. **IMPLEMENTED (in-process)**: Every outbound payout API call attaches a deterministic `PayPal-Request-Id` derived from `(bill id, action)`. The `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED` lifecycle prevents double-disbursement within one process, and duplicate replays return the stored result. Approval reserves cash without a debit; only confirmed settlement debits the ledger.
 - **Consequences**:
   - Protects against double-disbursing vendor payouts within a single process.
-  - **Does not** protect against spoofed webhook injection (no webhooks), restart loss, or multi-instance races. Those require the planned persistent design.
+  - **Does not** protect against restart loss or multi-instance races, and webhook replay protection is not durable. A real PayPal webhook has not been verified. Those require the planned persistent design.
 
 ---
 
@@ -113,7 +113,7 @@ This document records the architectural and design decisions made for MerchOps A
 - **Consequences**:
   - Zero-friction demo setup: runs with simple `npm run dev`.
   - State resets on server restart, cleanly documented for judges and evaluators.
-  - In-memory idempotency and audit records share the same restart limitation.
+  - In-memory payout lifecycle, webhook reconciliation, and audit records share the same restart limitation.
 
 ---
 
