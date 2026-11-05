@@ -1,227 +1,290 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { demoStore } from '@/lib/store';
-import { formatCentsToUSD, evaluatePayoutPolicy } from '@/lib/money';
+import { formatCentsToUSD } from '@/lib/money';
+import { PAYPAL_SANDBOX_ENABLED } from '@/lib/config';
+import { jsonError, requireSameOrigin } from '@/lib/http';
+import { parseJson, payoutSchema } from '@/lib/validation';
+import { dispatchPayout, PayPalError } from '@/lib/paypal';
 
 export const dynamic = 'force-dynamic';
 
+function extractBatchId(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const batchHeader = (payload as Record<string, unknown>).batch_header;
+  if (typeof batchHeader !== 'object' || batchHeader === null) return null;
+  const batchId = (batchHeader as Record<string, unknown>).payout_batch_id;
+  return typeof batchId === 'string' && batchId.length > 0 ? batchId : null;
+}
+
 export async function POST(req: NextRequest) {
+  const originResponse = requireSameOrigin(req);
+  if (originResponse) return originResponse;
+
+  const parsed = await parseJson(req, payoutSchema);
+  if (!parsed.ok) return parsed.response;
+
+  const { billId, idempotencyKey, executionMode } = parsed.data;
+
+  if (executionMode === 'PAYPAL_SANDBOX' && !PAYPAL_SANDBOX_ENABLED) {
+    return jsonError(
+      403,
+      'PAYPAL_DISABLED',
+      'The PayPal Sandbox execution rail is disabled for this environment.'
+    );
+  }
+
+  let beginResult: ReturnType<typeof demoStore.beginPayout>;
   try {
-    const body = await req.json();
-    const { billId, confirmed, idempotencyKey, executionMode = 'SIMULATION' } = body;
+    beginResult = demoStore.beginPayout({ billId, idempotencyKey });
+  } catch {
+    return jsonError(500, 'SERVER_ERROR', 'Failed to authorize payout.');
+  }
 
-    // Guard 1: Validate payload parameters
-    if (!billId || !idempotencyKey) {
-      return NextResponse.json(
-        { error: 'MISSING_PARAMETERS', message: 'billId and idempotencyKey are required.' },
-        { status: 400 }
-      );
-    }
+  if (!beginResult.ok) {
+    switch (beginResult.reason) {
+      case 'NOT_FOUND':
+        return jsonError(404, 'NOT_FOUND', 'Vendor bill not found.', {
+          snapshot: demoStore.getSnapshot(),
+        });
 
-    if (!confirmed) {
-      return NextResponse.json(
-        { error: 'MERCHANT_APPROVAL_REQUIRED', message: 'Explicit merchant confirmation is mandatory for all outbound payouts.' },
-        { status: 400 }
-      );
-    }
+      case 'ALREADY_DISBURSED':
+        return jsonError(
+          409,
+          'ALREADY_DISBURSED',
+          'This bill has already been paid and settled.',
+          { snapshot: demoStore.getSnapshot() }
+        );
 
-    // Guard 2: Enforce Idempotency Protection
-    // NOTE: In-memory duplicate protection for demo purposes. Resets on server restart and is not production-ready.
-    if (demoStore.hasIdempotencyKey(idempotencyKey)) {
-      return NextResponse.json(
-        {
-          error: 'DUPLICATE_REQUEST',
-          message: `Idempotency violation: Payout with key "${idempotencyKey}" has already been processed.`,
-        },
-        { status: 409 }
-      );
-    }
+      case 'IN_FLIGHT':
+        return jsonError(
+          409,
+          'IN_FLIGHT',
+          'A payout for this request is already in flight.',
+          { snapshot: demoStore.getSnapshot() }
+        );
 
-    // Guard 3: Validate Bill & Status
-    const bills = demoStore.getBills();
-    const bill = bills.find((b) => b.id === billId);
+      case 'INVALID_AMOUNT':
+        return jsonError(
+          400,
+          'INVALID_AMOUNT',
+          'The payout amount is invalid.'
+        );
 
-    if (!bill) {
-      return NextResponse.json({ error: 'NOT_FOUND', message: 'Vendor bill not found.' }, { status: 404 });
-    }
-
-    if (bill.status === 'DISBURSED') {
-      return NextResponse.json(
-        { error: 'ALREADY_DISBURSED', message: `Bill ${bill.billNumber} has already been paid and settled.` },
-        { status: 400 }
-      );
-    }
-
-    // Guard 4: Enforce Minimum Cash Reserve Protection
-    const account = demoStore.getAccount();
-    const policy = evaluatePayoutPolicy({
-      currentBalanceCents: account.clearedBalanceCents,
-      minReserveCents: account.minReserveCents,
-      billAmountCents: bill.amountCents,
-    });
-
-    if (!policy.allowed) {
-      // Record blocked attempt in audit log
-      demoStore.addAuditLog({
-        actor: 'SYSTEM',
-        action: 'PAYOUT_BLOCKED_RESERVE_BREACH',
-        details: `Blocked payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName}. Projected balance ${formatCentsToUSD(policy.postPayoutBalanceCents)} breaches ${formatCentsToUSD(account.minReserveCents)} reserve by ${formatCentsToUSD(policy.deficitCents)}.`,
-        amountCents: bill.amountCents,
-        isSimulated: executionMode === 'SIMULATION',
-      });
-
-      return NextResponse.json(
-        {
-          error: 'RESERVE_BREACH_BLOCKED',
-          message: `Payout blocked by Cash Reserve Policy. Paying ${formatCentsToUSD(bill.amountCents)} would drop cleared cash to ${formatCentsToUSD(policy.postPayoutBalanceCents)}, breaching your ${formatCentsToUSD(account.minReserveCents)} reserve floor by ${formatCentsToUSD(policy.deficitCents)}.`,
-          postPayoutBalanceCents: policy.postPayoutBalanceCents,
-          reserveCents: account.minReserveCents,
-          deficitCents: policy.deficitCents,
-          bufferCents: policy.bufferCents,
-        },
-        { status: 403 }
-      );
-    }
-
-    // Guard 5: Execution Mode (PayPal Sandbox Live API vs. Simulation Fallback)
-    if (executionMode === 'PAYPAL_SANDBOX') {
-      const PERMITTED_SANDBOX_ORIGIN = 'https://api-m.sandbox.paypal.com';
-      const configuredBaseUrl = process.env.PAYPAL_API_BASE_URL || PERMITTED_SANDBOX_ORIGIN;
-
-      // Strict Security Lockdown: Only the official PayPal Sandbox origin is permitted
-      if (configuredBaseUrl !== PERMITTED_SANDBOX_ORIGIN) {
-        return NextResponse.json(
+      case 'RESERVE_BREACH': {
+        const snapshot = demoStore.getSnapshot();
+        return jsonError(
+          403,
+          'RESERVE_BREACH_BLOCKED',
+          'Payout blocked by the cash reserve policy.',
           {
-            error: 'INVALID_PAYPAL_ENDPOINT',
-            message: `Security Lockdown: Only the official PayPal Sandbox API (${PERMITTED_SANDBOX_ORIGIN}) is permitted. Configured endpoint origin is rejected.`,
-          },
-          { status: 500 }
+            postPayoutBalanceCents: beginResult.postPayoutBalanceCents,
+            reserveCents: snapshot.account.minReserveCents,
+            deficitCents: beginResult.deficitCents,
+            snapshot,
+          }
         );
       }
 
-      const baseUrl = PERMITTED_SANDBOX_ORIGIN;
-      const clientId = process.env.PAYPAL_CLIENT_ID;
-      const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+      case 'DUPLICATE_REQUEST': {
+        const outcome: ReturnType<
+          typeof demoStore.getIdempotencyOutcome
+        > =
+          demoStore.getIdempotencyOutcome(idempotencyKey) ??
+          (beginResult.outcome as ReturnType<
+            typeof demoStore.getIdempotencyOutcome
+          >);
 
-      if (!clientId || !clientSecret || clientId.startsWith('your_')) {
-        return NextResponse.json(
-          {
-            error: 'PAYPAL_CREDENTIALS_MISSING',
-            message: 'PayPal Sandbox credentials not configured in environment. Use simulated payout mode instead.',
-          },
-          { status: 503 }
+        if (outcome?.status === 'SUCCEEDED') {
+          const stored =
+            outcome.response && typeof outcome.response === 'object'
+              ? (outcome.response as Record<string, unknown>)
+              : {};
+          return NextResponse.json(
+            { success: true, ...stored, snapshot: demoStore.getSnapshot() },
+            {
+              status: 200,
+              headers: {
+                'Idempotent-Replay': 'true',
+                'Cache-Control': 'no-store',
+              },
+            }
+          );
+        }
+
+        if (outcome?.status === 'IN_FLIGHT') {
+          return jsonError(
+            409,
+            'IN_FLIGHT',
+            'A payout for this idempotency key is already in flight.',
+            { snapshot: demoStore.getSnapshot() }
+          );
+        }
+
+        if (outcome?.status === 'FAILED') {
+          return jsonError(
+            409,
+            outcome.code || 'PAYOUT_FAILED',
+            'This idempotency key is associated with a failed payout.',
+            { snapshot: demoStore.getSnapshot() }
+          );
+        }
+
+        return jsonError(
+          409,
+          'DUPLICATE_REQUEST',
+          'This idempotency key has already been used.',
+          { snapshot: demoStore.getSnapshot() }
         );
       }
 
-      // Step A: Request OAuth Token
-      const tokenRes = await fetch(`${baseUrl}/v1/oauth2/token`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: 'grant_type=client_credentials',
-      });
-
-      if (!tokenRes.ok) {
-        return NextResponse.json(
-          {
-            error: 'PAYPAL_AUTH_FAILED',
-            message: `PayPal Sandbox OAuth failed with status HTTP ${tokenRes.status}.`,
-          },
-          { status: 502 }
+      default:
+        return jsonError(
+          409,
+          'PAYOUT_REJECTED',
+          'The payout could not be authorized.',
+          { snapshot: demoStore.getSnapshot() }
         );
-      }
-
-      const tokenData = await tokenRes.json();
-      const accessToken = tokenData.access_token;
-
-      // Step B: Dispatch Payouts Batch Request
-      const payoutPayload = {
-        sender_batch_header: {
-          sender_batch_id: `batch-${idempotencyKey.slice(0, 16)}`,
-          email_subject: `Payment from ${account.businessName}`,
-          email_message: `You received payment for bill ${bill.billNumber}.`,
-        },
-        items: [
-          {
-            recipient_type: 'EMAIL',
-            amount: {
-              value: (bill.amountCents / 100).toFixed(2),
-              currency: 'USD',
-            },
-            note: `Payment for ${bill.description}`,
-            sender_item_id: `item-${bill.id}`,
-            receiver: bill.vendorEmail,
-          },
-        ],
-      };
-
-      const payoutRes = await fetch(`${baseUrl}/v1/payments/payouts`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'PayPal-Request-Id': idempotencyKey,
-        },
-        body: JSON.stringify(payoutPayload),
-      });
-
-      if (!payoutRes.ok) {
-        const errData = await payoutRes.json().catch(() => ({}));
-        const errName = errData.name || 'PAYPAL_PAYOUTS_ERROR';
-        const errMessage = errData.message || `PayPal API rejected request with status HTTP ${payoutRes.status}`;
-
-        return NextResponse.json(
-          {
-            error: 'PAYPAL_API_REJECTED',
-            name: errName,
-            status: payoutRes.status,
-            message: errMessage,
-            suggestion: 'You can complete this presentation step using the verified Simulated Payout Mode.',
-          },
-          { status: 502 }
-        );
-      }
-
-      const payoutData = await payoutRes.json();
-
-      // Record Idempotency & Settle
-      demoStore.recordIdempotencyKey(idempotencyKey);
-      demoStore.markBillDisbursed(bill.id, true);
-
-      return NextResponse.json({
-        success: true,
-        mode: 'PAYPAL_SANDBOX',
-        isSimulated: false,
-        billId: bill.id,
-        batchId: payoutData.batch_header?.payout_batch_id || 'SANDBOX-BATCH',
-        message: `Successfully executed live PayPal Sandbox Payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName}.`,
-        account: demoStore.getAccount(),
-        bills: demoStore.getBills(),
-        auditLogs: demoStore.getAuditLogs(),
-      });
     }
+  }
 
-    // Default: Simulation Mode
-    demoStore.recordIdempotencyKey(idempotencyKey);
-    demoStore.markBillDisbursed(bill.id, false);
+  const bill = beginResult.bill;
 
-    return NextResponse.json({
+  if (executionMode === 'SIMULATION') {
+    const responsePayload = {
       success: true,
       mode: 'SIMULATION',
       isSimulated: true,
       billId: bill.id,
-      idempotencyKey,
+      batchId: null,
       message: `Simulated payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName} confirmed. Cash balance updated.`,
-      account: demoStore.getAccount(),
-      bills: demoStore.getBills(),
-      auditLogs: demoStore.getAuditLogs(),
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: 'SERVER_ERROR', message: error.message || 'An error occurred during payout authorization.' },
-      { status: 500 }
+    };
+
+    try {
+      const snapshot = demoStore.completePayout({
+        billId: bill.id,
+        idempotencyKey,
+        isRealPayPal: false,
+        response: {
+          mode: 'SIMULATION',
+          billId: bill.id,
+          message: responsePayload.message,
+        },
+      });
+
+      return NextResponse.json(
+        { ...responsePayload, snapshot },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
+    } catch {
+      let snapshot: ReturnType<typeof demoStore.getSnapshot>;
+      try {
+        snapshot = demoStore.failPayout({
+          billId: bill.id,
+          idempotencyKey,
+          code: 'SERVER_ERROR',
+          message: 'Failed to complete the simulated payout.',
+        });
+      } catch {
+        snapshot = demoStore.getSnapshot();
+      }
+      return jsonError(
+        500,
+        'SERVER_ERROR',
+        'Failed to complete the simulated payout.',
+        { snapshot }
+      );
+    }
+  }
+
+  const clientId = process.env.PAYPAL_CLIENT_ID;
+  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+
+  if (
+    !clientId ||
+    !clientSecret ||
+    clientId.startsWith('your_') ||
+    clientSecret.startsWith('your_')
+  ) {
+    let snapshot: ReturnType<typeof demoStore.getSnapshot>;
+    try {
+      snapshot = demoStore.failPayout({
+        billId: bill.id,
+        idempotencyKey,
+        code: 'PAYPAL_CREDENTIALS_MISSING',
+        message: 'PayPal Sandbox credentials are not configured.',
+      });
+    } catch {
+      snapshot = demoStore.getSnapshot();
+    }
+
+    return jsonError(
+      503,
+      'PAYPAL_CREDENTIALS_MISSING',
+      'PayPal Sandbox credentials are not configured. Use simulated payout mode instead.',
+      { snapshot }
     );
   }
-}
 
+  try {
+    const payoutData = await dispatchPayout({
+      idempotencyKey,
+      amountCents: bill.amountCents,
+      currency: 'USD',
+      receiverEmail: bill.vendorEmail,
+      senderBatchId: `batch-${idempotencyKey}`,
+      note: `Payment for ${bill.description}`,
+      emailSubject: `Payment from ${beginResult.snapshot.account.businessName}`,
+      emailMessage: `You received payment for bill ${bill.billNumber}.`,
+    });
+
+    const batchId = extractBatchId(payoutData);
+    const responsePayload = {
+      success: true,
+      mode: 'PAYPAL_SANDBOX',
+      isSimulated: false,
+      billId: bill.id,
+      batchId,
+      message: `Successfully executed live PayPal Sandbox Payout of ${formatCentsToUSD(bill.amountCents)} to ${bill.vendorName}.`,
+    };
+
+    const snapshot = demoStore.completePayout({
+      billId: bill.id,
+      idempotencyKey,
+      isRealPayPal: true,
+      externalRef: batchId ?? undefined,
+      response: {
+        ...responsePayload,
+        paypal: payoutData,
+      },
+    });
+
+    return NextResponse.json(
+      { ...responsePayload, snapshot },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (error: unknown) {
+    const isUnknownOutcome =
+      error instanceof PayPalError &&
+      error.code === 'PAYPAL_OUTCOME_UNKNOWN';
+    const code = isUnknownOutcome
+      ? 'PAYPAL_OUTCOME_UNKNOWN'
+      : 'PAYPAL_API_REJECTED';
+    const message = isUnknownOutcome
+      ? 'PayPal did not confirm the payout outcome. Reconcile before retrying.'
+      : 'PayPal rejected the payout request. No funds were disbursed.';
+
+    let snapshot: ReturnType<typeof demoStore.getSnapshot>;
+    try {
+      snapshot = demoStore.failPayout({
+        billId: bill.id,
+        idempotencyKey,
+        code,
+        message,
+      });
+    } catch {
+      snapshot = demoStore.getSnapshot();
+    }
+
+    return jsonError(502, code, message, { snapshot });
+  }
+}

@@ -7,8 +7,11 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 
-// Register AG Grid Community modules and developer ValidationModule globally once
-ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
+const isProduction = process.env.NODE_ENV === 'production';
+
+ModuleRegistry.registerModules(
+  isProduction ? [AllCommunityModule] : [AllCommunityModule, ValidationModule],
+);
 
 // MerchOps AI modern theme definition via AG Grid Theming API (v33+)
 export const merchOpsTheme = themeQuartz.withParams({
@@ -23,4 +26,5 @@ export const merchOpsTheme = themeQuartz.withParams({
   cellHorizontalPadding: 12,
 });
 
-
+export const noRowsOverlayTemplate =
+  '<span class="text-xs text-slate-500 px-3">No records match the current filters.</span>';

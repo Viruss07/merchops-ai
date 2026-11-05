@@ -11,6 +11,7 @@ interface NavigationProps {
   overdueCount: number;
   pendingBillsCount: number;
   hasBreach: boolean;
+  firstBreachDay?: number;
 }
 
 export function Navigation({
@@ -19,7 +20,15 @@ export function Navigation({
   overdueCount,
   pendingBillsCount,
   hasBreach,
+  firstBreachDay,
 }: NavigationProps) {
+  const breachLabel =
+    firstBreachDay === 0
+      ? 'Breach at opening'
+      : typeof firstBreachDay === 'number'
+        ? `Breach Day ${firstBreachDay}`
+        : 'Breach predicted';
+
   const tabs = [
     {
       key: 'runway' as TabKey,
@@ -28,7 +37,7 @@ export function Navigation({
       badge: hasBreach ? (
         <span className="flex items-center space-x-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
           <AlertCircle className="h-3 w-3" />
-          <span>Breach Day 10</span>
+          <span>{breachLabel}</span>
         </span>
       ) : (
         <span className="flex items-center space-x-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
@@ -53,7 +62,7 @@ export function Navigation({
       icon: Send,
       badge: pendingBillsCount > 0 ? (
         <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
-          {pendingBillsCount} Pending
+          {pendingBillsCount} Open
         </span>
       ) : null,
     },
@@ -65,24 +74,46 @@ export function Navigation({
     },
   ];
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') {
+      return;
+    }
+    event.preventDefault();
+    let nextIndex = index;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+    const nextTab = tabs[nextIndex];
+    onChangeTab(nextTab.key);
+    document.getElementById(`tab-${nextTab.key}`)?.focus();
+  };
+
   return (
-    <nav className="border-b border-slate-200 bg-white">
+    <nav aria-label="Financial modules" className="border-b border-slate-200 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex space-x-8 overflow-x-auto py-1">
-          {tabs.map((tab) => {
+        <div role="tablist" aria-label="Financial modules" className="flex space-x-8 overflow-x-auto py-1">
+          {tabs.map((tab, index) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
             return (
               <button
                 key={tab.key}
+                id={`tab-${tab.key}`}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`panel-${tab.key}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => onChangeTab(tab.key)}
-                className={`flex items-center space-x-2 border-b-2 py-3.5 text-sm font-medium transition whitespace-nowrap ${
+                onKeyDown={(event) => handleKeyDown(event, index)}
+                className={`flex items-center space-x-2 border-b-2 py-3.5 text-sm font-medium transition whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                   isActive
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                <Icon className={`h-4 w-4 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
                 <span>{tab.label}</span>
                 {tab.badge}
               </button>
@@ -93,4 +124,3 @@ export function Navigation({
     </nav>
   );
 }
-

@@ -2,39 +2,54 @@
 
 ## MerchOps AI — PayPal AI Hackathon 2026
 
-This guide provides instructions for configuring, testing, and verifying the PayPal Developer Sandbox environment for MerchOps AI.
+This guide explains how to configure the PayPal Developer Sandbox for MerchOps AI and how to run the optional manual checks. **No Sandbox verification has been executed or recorded in this repository.** Nothing in this document is a claim that OAuth, Payouts scope, or live payout dispatch has been verified.
 
 ---
 
-## 1. Verified Capabilities vs. Working Assumptions
+## 1. Status: What Exists vs. What Is Assumed
 
-In accordance with our financial and security rules, we explicitly distinguish between capabilities verified by standard PayPal developer documentation and assumptions that must be validated during sandbox integration.
+In accordance with our financial and security rules, we separate PayPal platform documentation from code that exists in this repository.
 
-### Verified Capabilities (Standard PayPal Developer Platform)
-- **OAuth 2.0 Authentication**: Standard client credentials grant via `POST /v1/oauth2/token` returning short-lived bearer tokens.
-- **Orders API v2**: Creating and capturing sandbox checkout orders for invoice payment (`POST /v2/checkout/orders`, `POST /v2/checkout/orders/{id}/capture`).
-- **Invoicing API v2**: Creating drafts, sending invoices, and retrieving invoice payment URLs (`POST /v2/invoicing/invoices`).
-- **Webhook Signature Verification**: Cryptographic validation endpoint (`POST /v1/notifications/verify-webhook-signature`) verifying transmission headers and CRC32/RSA signatures.
-- **Sandbox Webhook Simulator**: Developer dashboard tool to dispatch synthetic webhook events (`PAYMENT.CAPTURE.COMPLETED`, `INVOICING.INVOICE.PAID`).
+### Documented PayPal Platform Capabilities (not verified by this repo)
+These are standard PayPal developer capabilities described in PayPal documentation. They have **not** been exercised by this application:
+- OAuth 2.0 client-credentials grant (`POST /v1/oauth2/token`).
+- Orders API v2 checkout create/capture.
+- Invoicing API v2 draft/send/retrieve.
+- Webhook signature verification endpoint.
+- Sandbox Webhook Simulator.
 
-### Working Assumptions (To Be Confirmed During Sandbox Testing)
-- **Assumption 1 (Payouts API Sandbox Enablement)**: We assume that the PayPal Sandbox default business account has the Payouts API (`POST /v1/payments/payouts`) enabled by default. *Mitigation*: If sandbox payouts return `INSUFFICIENT_FUNDS` or `FEATURE_NOT_AVAILABLE`, verify account wallet balance and permissions in the developer portal, or simulate the final payout dispatch with mock mode fallback. The mock payout fallback is strictly a simulation and never executes a real PayPal transaction.
-- **Assumption 2 (Webhook Delivery Latency)**: We assume standard sandbox webhooks arrive within 2–5 seconds during live demo runs. *Mitigation*: Support both automated webhook updates and a manual "Sync with PayPal" fallback button in the UI for the live demo.
-- **Assumption 3 (Multi-Currency Sandbox Testing)**: We assume all transactions for this hackathon demo are in `USD`. Multi-currency conversion is out of scope for the MVP.
+### Implemented in This Repository
+- **OAuth client-credentials request helper** used only by the gated Payouts rail.
+- **Payouts payload generation** (`POST /v1/payments/payouts`) behind the server-side `PAYPAL_PAYOUTS_ENABLED` gate.
+- **Strict Sandbox origin lockdown** (`https://api-m.sandbox.paypal.com` only).
+- **Default simulation rail** that never calls PayPal.
+- **Manual scripts** for OAuth and Payouts-scope checks.
+
+### Not Implemented
+- Webhook receiver and signature verification (`/api/webhooks/paypal` does not exist).
+- Webhook event deduplication.
+- Invoicing/Orders API creation and capture.
+- Live payout status reconciliation.
+- Durable payout/idempotency persistence.
+
+### Working Assumptions (To Be Confirmed Manually)
+- **Assumption 1 (Payouts API Sandbox Enablement)**: The Sandbox business account has Payouts enabled and sufficient balance. *Mitigation*: keep the default simulation rail; use the manual scope script; never claim live dispatch works until recorded.
+- **Assumption 2 (Webhook Delivery Latency)**: Irrelevant to the current prototype because no webhook receiver exists.
+- **Assumption 3 (Multi-Currency)**: All demo transactions are `USD`; multi-currency is out of scope.
 
 ### Pending Sandbox Verification Tests
 
-The following integration verification tests have not yet been executed in application code. All tests remain pending:
+The following tests have **not** been executed in application code:
 
 - [ ] Confirm Sandbox Business and Personal accounts are available.
 - [ ] Create a Sandbox REST application and obtain credentials.
-- [ ] Obtain an OAuth access token successfully.
-- [ ] Verify whether the Payouts API is enabled.
-- [ ] Test `POST /v1/payments/payouts` and record the actual HTTP status and response.
+- [ ] Obtain an OAuth access token successfully (`scripts/paypal-auth-test.mjs`).
+- [ ] Verify whether the Payouts API scope is present (`scripts/paypal-payouts-scope-test.mjs`).
+- [ ] Test `POST /v1/payments/payouts` with `PAYPAL_PAYOUTS_ENABLED=true` and record the actual HTTP status/response.
 - [ ] Verify payout status and recipient-side results.
-- [ ] Configure a webhook and verify actual delivery.
-- [ ] Test webhook signature verification using the raw request body in Next.js.
-- [ ] Test duplicate webhook delivery and confirm safe deduplication.
+- [ ] Configure a webhook and verify delivery — **blocked: no webhook receiver exists**.
+- [ ] Test webhook signature verification — **blocked: not implemented**.
+- [ ] Test duplicate webhook delivery — **blocked: not implemented**.
 - [ ] Record all results as VERIFIED, DOCUMENTED, ASSUMED, or UNVERIFIED.
 
 ---
@@ -65,62 +80,88 @@ Copy these values into your `.env.local` file (derived from `.env.example`):
 PAYPAL_API_BASE_URL=https://api-m.sandbox.paypal.com
 PAYPAL_CLIENT_ID=your_sandbox_client_id_here
 PAYPAL_CLIENT_SECRET=your_sandbox_client_secret_here
+
+# Default: false. The live rail is server-side gated; the browser cannot enable it.
+# Set to true only when you intentionally want to exercise live Sandbox dispatch.
+PAYPAL_PAYOUTS_ENABLED=false
+
+# RESERVED / NOT YET USED — no webhook receiver exists.
+PAYPAL_WEBHOOK_ID=
 ```
 
-### Step 4: Configure Webhooks
-1. In your PayPal App settings, scroll to **Sandbox Webhooks** and click **Add Webhook**.
-2. **Webhook URL**: Use your local tunnel URL (via ngrok/localtunnel) or deployed Render URL:
-   ```text
-   https://<your-subdomain>.ngrok-free.app/api/webhooks/paypal
-   ```
-3. Subscribe to the following event types:
-   - `PAYMENT.CAPTURE.COMPLETED`
-   - `INVOICING.INVOICE.PAID`
-   - `PAYMENT.PAYOUTSBATCH.SUCCESS`
-4. Copy the resulting **Webhook ID** into `.env.local`:
-   ```bash
-   PAYPAL_WEBHOOK_ID=your_webhook_id_here
-   ```
+The app must never receive these secrets in a browser bundle or an LLM prompt.
+
+### Step 4: Webhooks (Not Implemented)
+There is no webhook endpoint to register. Do not configure a webhook URL for this prototype yet. `PAYPAL_WEBHOOK_ID` is reserved for a future implementation.
 
 ---
 
-## 3. End-to-End Demo Simulation Script
+## 3. Manual Verification Scripts
 
-Use these steps to test the full hackathon demo story in Sandbox mode:
+These scripts are **opt-in, manual, and never part of `npm test` or CI**. They read credentials only from `process.env`, never print tokens/secrets, and set a non-zero `process.exitCode` on failure.
+
+```bash
+# Requires real sandbox credentials + network. Does not move money.
+node scripts/paypal-auth-test.mjs
+
+# Requires real sandbox credentials + network. Does not move money.
+node scripts/paypal-payouts-scope-test.mjs
+```
+
+Offline/demo checks (require a running app, no live PayPal):
+
+```bash
+# Builds and starts the app, then exercises reset, reserve blocking,
+# collection, payout, idempotent replay, and reset again.
+node scripts/run-e2e.mjs
+
+# API-level seed/scenario check against a running server.
+BASE_URL=http://localhost:3000 node scripts/verify-chart-render.mjs
+```
+
+`run-e2e.mjs` forces `PAYPAL_PAYOUTS_ENABLED=false`, so it can never trigger a live payout.
+
+---
+
+## 4. End-to-End Demo Flow
+
+The default flow is local simulation and does not involve PayPal network calls.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Merchant as Merchant (User)
     participant App as MerchOps AI
-    participant OpenRouter as OpenRouter (LLM)
-    participant PayPal as PayPal Sandbox
-    actor Buyer as Customer (Buyer)
+    participant OpenRouter as OpenRouter (optional)
+    participant PaypalSim as Simulation Rail (default)
+    participant PaypalLive as PayPal Sandbox (gated, unverified)
 
-    Merchant->>App: Opens Runway Dashboard
-    App-->>Merchant: Alerts: Cash reserve breach in 10 days
-    Merchant->>App: Inspects Overdue Invoices
-    App->>OpenRouter: Request reminder draft (sanitized data)
-    OpenRouter-->>App: Returns reminder draft
-    Merchant->>App: Reviews & clicks "Approve & Send"
-    App->>PayPal: Generate Sandbox Payment URL
-    App-->>Buyer: Reminder delivered with PayPal link
-    Buyer->>PayPal: Logs into Sandbox Buyer Account & Pays
-    PayPal->>App: POST /api/webhooks/paypal (Signed Webhook)
-    App->>App: Verify signature, idempotency & update ledger (cents)
-    App-->>Merchant: Runway recalculated (healthy reserve restored)
-    Merchant->>App: Reviews vendor bill & confirms payout
-    App->>PayPal: POST /v1/payments/payouts (with Idempotency-Key)
-    PayPal-->>App: Payout accepted & processed
+    Merchant->>App: Opens Runway Dashboard (DEMO_AS_OF=2026-11-03)
+    App-->>Merchant: Alerts: $800 reserve breach on Day 10
+    Merchant->>App: Inspects overdue invoices
+    App->>OpenRouter: Request reminder draft (minimal fields)
+    OpenRouter-->>App: Returns draft (or fallback template)
+    Merchant->>App: Reviews & approves reminder (server-side)
+    Note over App: No outbound email is sent
+    Merchant->>App: Simulates Apex settlement
+    App->>PaypalSim: Local ledger update (+$1,500, MERCHANT attributed)
+    App-->>Merchant: Balance $5,700; runway healthy
+    Merchant->>App: Reviews Acme bill & confirms payout
+    App->>PaypalSim: Local payout (-$3,000), UUID idempotency key
+    alt PAYPAL_PAYOUTS_ENABLED=true + credentials configured
+        App->>PaypalLive: POST /v1/payments/payouts (unverified)
+    end
+    App-->>Merchant: Balance $2,700; reserve preserved
 ```
 
 ---
 
-## 4. Troubleshooting Sandbox Issues
+## 5. Troubleshooting Sandbox Issues
 
 | Issue | Likely Cause | Resolution |
 |---|---|---|
-| `401 Unauthorized` | Invalid Client ID/Secret or expired token | Check `.env.local` credentials and verify OAuth token generator cache. |
-| Webhook verification fails | Incorrect `PAYPAL_WEBHOOK_ID` or modified raw body | Ensure Next.js route uses `req.text()` for raw body before JSON parsing. |
-| Payout rejected | Insufficient funds in sandbox merchant balance | Add funds to Sandbox Merchant account balance in the Developer Dashboard. |
-
+| `401 Unauthorized` | Invalid Client ID/Secret or expired token | Check `.env.local` credentials. Never paste credentials into logs or AI prompts. |
+| Live rail unavailable | `PAYPAL_PAYOUTS_ENABLED` is false | This is the safe default. Set it to `true` server-side only when intentionally testing live dispatch. |
+| `PAYPAL_CREDENTIALS_MISSING` | Missing sandbox credentials | Populate `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`, or use the default simulation rail. |
+| Payout rejected | Insufficient funds or Payouts not enabled on the sandbox account | Verify the Sandbox Merchant balance/permissions. Simulation remains available. |
+| Webhook not received | No webhook receiver exists | Expected. Webhooks are not implemented in this prototype. |

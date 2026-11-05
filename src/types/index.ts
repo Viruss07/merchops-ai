@@ -1,6 +1,6 @@
 /**
  * MerchOps AI — Core Domain Types
- * 
+ *
  * Strict Financial Principle:
  * All currency values are strictly stored and computed as integer cents (number).
  * $1.00 = 100 cents. No floating point arithmetic.
@@ -10,7 +10,7 @@ export type CurrencyCents = number;
 
 export type InvoiceStatus = 'PAID' | 'CURRENT' | 'OVERDUE';
 
-export type BillStatus = 'PENDING' | 'APPROVED' | 'DISBURSED';
+export type BillStatus = 'PENDING' | 'APPROVED' | 'DISBURSED' | 'IN_FLIGHT';
 
 export interface Invoice {
   id: string;
@@ -69,6 +69,8 @@ export interface RunwayForecast {
   firstBreachDay?: number;
   breachDate?: string;
   breachDeficitCents?: CurrencyCents;
+  minBalanceCents: CurrencyCents;
+  firstBreachDeficitCents?: CurrencyCents;
 }
 
 export interface AuditLogEntry {
@@ -81,3 +83,14 @@ export interface AuditLogEntry {
   isSimulated: boolean;
 }
 
+export interface StateSnapshot {
+  account: MerchantAccount;
+  invoices: Invoice[];
+  bills: Bill[];
+  auditLogs: AuditLogEntry[];
+  capabilities: { paypalSandboxEnabled: boolean };
+  demoConfig: {
+    asOfDate: string;
+    forecastDays: number;
+  };
+}

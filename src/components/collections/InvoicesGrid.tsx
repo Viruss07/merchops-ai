@@ -2,10 +2,16 @@
 
 import React, { useState, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef } from 'ag-grid-community';
+import type {
+  ColDef,
+  GetQuickFilterTextParams,
+  GetRowIdParams,
+  ICellRendererParams,
+  ValueGetterParams,
+} from 'ag-grid-community';
 import { formatCentsToUSD } from '@/lib/money';
-import { merchOpsTheme } from '@/lib/agGrid';
-import { Invoice } from '@/types';
+import { merchOpsTheme, noRowsOverlayTemplate } from '@/lib/agGrid';
+import type { Invoice } from '@/types';
 import {
   Sparkles,
   CreditCard,
@@ -38,15 +44,15 @@ export function InvoicesGrid({
         flex: 1,
         sortable: true,
         filter: true,
-        cellRenderer: (params: any) => {
-          const inv: Invoice = params.data;
+        cellRenderer: (params: ICellRendererParams<Invoice>) => {
+          const inv = params.data;
           if (!inv) return null;
           return (
             <div className="flex flex-col justify-center h-full py-1">
               <span className="font-mono font-bold text-slate-900 leading-tight">
                 {inv.invoiceNumber}
               </span>
-              <span className="text-[11px] text-slate-400 truncate max-w-xs leading-tight mt-0.5">
+              <span className="text-[11px] text-slate-500 truncate max-w-xs leading-tight mt-0.5">
                 {inv.description}
               </span>
             </div>
@@ -60,15 +66,15 @@ export function InvoicesGrid({
         flex: 1.1,
         sortable: true,
         filter: true,
-        cellRenderer: (params: any) => {
-          const inv: Invoice = params.data;
+        cellRenderer: (params: ICellRendererParams<Invoice>) => {
+          const inv = params.data;
           if (!inv) return null;
           return (
             <div className="flex flex-col justify-center h-full py-1">
               <span className="font-semibold text-slate-900 text-xs leading-tight truncate">
                 {inv.customerName}
               </span>
-              <span className="font-mono text-[11px] text-slate-400 truncate leading-tight mt-0.5">
+              <span className="font-mono text-[11px] text-slate-500 truncate leading-tight mt-0.5">
                 {inv.customerEmail}
               </span>
             </div>
@@ -84,8 +90,14 @@ export function InvoicesGrid({
         sortable: true,
         filter: 'agNumberColumnFilter',
         type: 'numericColumn',
-        cellRenderer: (params: any) => {
-          if (params.value === undefined) return null;
+        filterValueGetter: (params: ValueGetterParams<Invoice>) =>
+          params.data ? params.data.amountCents / 100 : null,
+        getQuickFilterText: (params: GetQuickFilterTextParams<Invoice>) =>
+          params.data
+            ? `${formatCentsToUSD(params.data.amountCents)} ${(params.data.amountCents / 100).toFixed(2)}`
+            : '',
+        cellRenderer: (params: ICellRendererParams<Invoice, number>) => {
+          if (params.value == null) return null;
           return (
             <div className="flex items-center justify-end h-full">
               <span className="font-mono font-bold text-sm text-slate-900">
@@ -103,12 +115,12 @@ export function InvoicesGrid({
         flex: 0.8,
         sortable: true,
         filter: true,
-        cellRenderer: (params: any) => {
-          const inv: Invoice = params.data;
+        cellRenderer: (params: ICellRendererParams<Invoice>) => {
+          const inv = params.data;
           if (!inv) return null;
           return (
             <div className="flex items-center space-x-1.5 h-full text-xs text-slate-700">
-              <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
               <span className="font-mono">{inv.dueDate}</span>
             </div>
           );
@@ -122,8 +134,8 @@ export function InvoicesGrid({
         flex: 0.8,
         sortable: true,
         filter: true,
-        cellRenderer: (params: any) => {
-          const inv: Invoice = params.data;
+        cellRenderer: (params: ICellRendererParams<Invoice, Invoice['status']>) => {
+          const inv = params.data;
           if (!inv) return null;
           if (inv.status === 'PAID') {
             return (
@@ -162,12 +174,12 @@ export function InvoicesGrid({
         flex: 1.0,
         sortable: true,
         filter: 'agNumberColumnFilter',
-        cellRenderer: (params: any) => {
-          const inv: Invoice = params.data;
+        cellRenderer: (params: ICellRendererParams<Invoice, number>) => {
+          const inv = params.data;
           if (!inv) return null;
           if (inv.status === 'PAID') {
             return (
-              <div className="flex items-center h-full text-xs text-slate-400">
+              <div className="flex items-center h-full text-xs text-slate-500">
                 <span>Settled</span>
               </div>
             );
@@ -180,8 +192,13 @@ export function InvoicesGrid({
                   <span>{inv.daysOverdue} days past due</span>
                 </span>
                 {inv.lastReminderSentAt && (
-                  <span className="text-[10px] text-indigo-600 font-medium truncate">
-                    Draft Approved ({new Date(inv.lastReminderSentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                  <span className="text-[10px] text-indigo-700 font-medium truncate">
+                    Reminder approved (
+                    {new Date(inv.lastReminderSentAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    )
                   </span>
                 )}
               </div>
@@ -202,14 +219,14 @@ export function InvoicesGrid({
         sortable: false,
         filter: false,
         cellStyle: { paddingLeft: '8px', paddingRight: '8px' },
-        cellRenderer: (params: any) => {
-          const inv: Invoice = params.data;
+        cellRenderer: (params: ICellRendererParams<Invoice>) => {
+          const inv = params.data;
           if (!inv) return null;
 
           if (inv.status === 'PAID') {
             return (
               <div className="flex items-center h-full">
-                <span className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-600">
+                <span className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-700">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                   <span>Settled to Cash Balance</span>
                 </span>
@@ -222,8 +239,8 @@ export function InvoicesGrid({
               <button
                 type="button"
                 onClick={() => onOpenDraft(inv)}
-                className="inline-flex items-center space-x-1 rounded-lg border border-indigo-300 bg-indigo-50/90 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-xs hover:bg-indigo-100 transition active:scale-95 shrink-0"
-                title="Draft AI collection reminder email"
+                aria-label={`Draft AI collection reminder for ${inv.customerName}`}
+                className="inline-flex items-center space-x-1 rounded-lg border border-indigo-300 bg-indigo-50/90 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <Sparkles className="h-3 w-3 text-indigo-600 shrink-0" />
                 <span>Draft Reminder</span>
@@ -232,8 +249,8 @@ export function InvoicesGrid({
               <button
                 type="button"
                 onClick={() => onOpenPaymentModal(inv)}
-                className="inline-flex items-center space-x-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition active:scale-95 shrink-0"
-                title="Simulate customer paying invoice via PayPal"
+                aria-label={`Simulate PayPal payment from ${inv.customerName}`}
+                className="inline-flex items-center space-x-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
               >
                 <CreditCard className="h-3 w-3 shrink-0" />
                 <span>Simulate Pay</span>
@@ -243,15 +260,15 @@ export function InvoicesGrid({
         },
       },
     ],
-    [onOpenDraft, onOpenPaymentModal]
+    [onOpenDraft, onOpenPaymentModal],
   );
 
-  const defaultColDef = useMemo<ColDef>(
+  const defaultColDef = useMemo<ColDef<Invoice>>(
     () => ({
       resizable: true,
       suppressMovable: false,
     }),
-    []
+    [],
   );
 
   return (
@@ -267,26 +284,28 @@ export function InvoicesGrid({
 
         {/* Quick Filter Search Input */}
         <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
           <input
             type="text"
             value={quickFilterText}
             onChange={(e) => setQuickFilterText(e.target.value)}
+            aria-label="Search invoices by number, customer, description, status, or dollar amount"
             placeholder="Search invoices, customers..."
-            className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
+            className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
           />
         </div>
       </div>
 
       {/* AG Grid React Component */}
-      <div className="w-full overflow-x-auto">
+      <div className="w-full h-[440px]">
         <AgGridReact<Invoice>
           theme={merchOpsTheme}
           rowData={invoices}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
           quickFilterText={quickFilterText}
-          domLayout="autoHeight"
+          getRowId={(params: GetRowIdParams<Invoice>) => params.data.id}
+          overlayNoRowsTemplate={noRowsOverlayTemplate}
           rowHeight={64}
           headerHeight={44}
           animateRows={true}
@@ -295,4 +314,3 @@ export function InvoicesGrid({
     </div>
   );
 }
-

@@ -16,7 +16,7 @@ import {
   Table as TableIcon,
   List as ListIcon,
 } from 'lucide-react';
-import { AuditLogEntry } from '@/types';
+import type { AuditLogEntry } from '@/types';
 import { formatCentsToUSD } from '@/lib/money';
 import { AuditGrid } from '@/components/audit/AuditGrid';
 
@@ -76,7 +76,7 @@ export function AuditView({ logs }: AuditViewProps) {
     }
   };
 
-  const getActionBadge = (action: string, isSimulated: boolean) => {
+  const getActionBadge = (action: string) => {
     switch (action) {
       case 'PAYOUT_DISBURSED_SIMULATED':
         return (
@@ -175,15 +175,17 @@ export function AuditView({ logs }: AuditViewProps) {
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-        <div className="flex items-center space-x-1 text-xs">
-          <span className="text-slate-400 font-semibold px-2 flex items-center space-x-1">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 border-b border-slate-200 pb-2">
+        <div className="flex flex-wrap items-center gap-1 text-xs">
+          <span className="text-slate-500 font-semibold px-2 flex items-center space-x-1 shrink-0">
             <Filter className="h-3 w-3" />
             <span>Filter:</span>
           </span>
           <button
+            type="button"
             onClick={() => setFilter('ALL')}
-            className={`rounded-lg px-3 py-1.5 font-semibold transition ${
+            aria-pressed={filter === 'ALL'}
+            className={`rounded-lg px-3 py-1.5 font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${
               filter === 'ALL'
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-600 hover:bg-slate-100'
@@ -192,28 +194,34 @@ export function AuditView({ logs }: AuditViewProps) {
             All Events ({logs.length})
           </button>
           <button
+            type="button"
             onClick={() => setFilter('PAYOUTS')}
-            className={`rounded-lg px-3 py-1.5 font-semibold transition ${
+            aria-pressed={filter === 'PAYOUTS'}
+            className={`rounded-lg px-3 py-1.5 font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${
               filter === 'PAYOUTS'
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            Payouts & Disbursements
+            Payouts &amp; Disbursements
           </button>
           <button
+            type="button"
             onClick={() => setFilter('COLLECTIONS')}
-            className={`rounded-lg px-3 py-1.5 font-semibold transition ${
+            aria-pressed={filter === 'COLLECTIONS'}
+            className={`rounded-lg px-3 py-1.5 font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${
               filter === 'COLLECTIONS'
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            Invoices & Reminders
+            Invoices &amp; Reminders
           </button>
           <button
+            type="button"
             onClick={() => setFilter('GUARDRAILS')}
-            className={`rounded-lg px-3 py-1.5 font-semibold transition ${
+            aria-pressed={filter === 'GUARDRAILS'}
+            className={`rounded-lg px-3 py-1.5 font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${
               filter === 'GUARDRAILS'
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-600 hover:bg-slate-100'
@@ -224,13 +232,14 @@ export function AuditView({ logs }: AuditViewProps) {
         </div>
 
         {/* View Mode Toggle: AG Grid vs Feed */}
-        <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+        <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 self-start lg:self-auto shrink-0">
           <button
             type="button"
             onClick={() => setViewMode('GRID')}
-            className={`inline-flex items-center space-x-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+            aria-pressed={viewMode === 'GRID'}
+            className={`inline-flex items-center space-x-1 rounded-md px-2.5 py-1 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               viewMode === 'GRID'
-                ? 'bg-white text-slate-900 shadow-xs'
+                ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -240,9 +249,10 @@ export function AuditView({ logs }: AuditViewProps) {
           <button
             type="button"
             onClick={() => setViewMode('FEED')}
-            className={`inline-flex items-center space-x-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+            aria-pressed={viewMode === 'FEED'}
+            className={`inline-flex items-center space-x-1 rounded-md px-2.5 py-1 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               viewMode === 'FEED'
-                ? 'bg-white text-slate-900 shadow-xs'
+                ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -276,7 +286,7 @@ export function AuditView({ logs }: AuditViewProps) {
                     <div className="space-y-1.5 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         {getActorBadge(log.actor)}
-                        {getActionBadge(log.action, log.isSimulated)}
+                        {getActionBadge(log.action)}
                         {log.isSimulated && (
                           <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200">
                             Local Simulation
@@ -310,7 +320,7 @@ export function AuditView({ logs }: AuditViewProps) {
                             : formatCentsToUSD(log.amountCents)}
                         </span>
                       )}
-                      <span className="text-[11px] font-mono text-slate-400">
+                      <span className="text-[11px] font-mono text-slate-500">
                         {new Date(log.timestamp).toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',

@@ -3,20 +3,34 @@
 ## MerchOps AI — PayPal AI Hackathon 2026
 
 **Key Milestones**:
-- **Current Status**: Phase 1 — Foundational Documentation & Governance
+- **Current Status**: Working single-process prototype (in-memory repository; no auth, database, or webhooks)
 - **Early Review Checkpoint**: November 5, 2026
 - **Final Submission Deadline**: November 12, 2026 at 12:00 PM PST
 
+> **Status legend**: `[x]` = implemented in this repository; `[ ]` = planned/not implemented. Roadmap phases below are historical targets, not claims of completion. The current prototype is described in "Current Implemented State"; everything else is **TARGET-STATE**.
+
 ---
 
-## 1. Phased Delivery Roadmap
+## Current Implemented State
+
+- **Runway Engine**: Deterministic integer-cent forecast from a deterministic clock (`DEMO_AS_OF`, default `2026-11-03`). Bills matched by `dueDate` only (no double counting), overdue/day-0 clamped to Day 1, PENDING/APPROVED/IN_FLIGHT included, `minBalanceCents` and `firstBreachDeficitCents` reported.
+- **Server-authoritative state**: `GET /api/state` returns `{account, invoices, bills, auditLogs, capabilities:{paypalSandboxEnabled}}`. The browser does not import the in-memory store; mutations return a fresh snapshot.
+- **In-memory repository**: Account, invoices, bills, audit logs, and idempotency keys live in a server-side singleton. State resets on server restart.
+- **Payouts**: Reserve check (HTTP 403 `RESERVE_BREACH_BLOCKED`), two-step `confirmed: true` enforcement, UUID idempotency keys, and an in-process `beginPayout -> IN_FLIGHT -> completePayout/failPayout` state machine. Duplicate replays of a `SUCCEEDED` key return the stored result.
+- **Security controls**: Same-origin enforcement + Zod validation on all mutation routes; rate-limited, validated OpenRouter draft route; `/api/reset` requires `{confirm:true}` + same-origin (+ `x-demo-admin-token` in production when configured); live PayPal rail gated server-side by `PAYPAL_PAYOUTS_ENABLED=true`.
+- **Collections**: Reminder drafting with honest fallback, server-side approval at `POST /api/reminders/approve`, and simulated settlement attributed to `MERCHANT`.
+- **NOT implemented**: authentication/user accounts, tenant isolation, database persistence, PayPal webhooks/signature verification, Invoicing/Orders APIs, outbound email, multi-instance-safe idempotency.
+
+---
+
+## 1. Phased Delivery Roadmap (Target-State)
 
 ```
 Nov 1 - Nov 2        Nov 3 - Nov 4         Nov 5            Nov 6 - Nov 9          Nov 10 - Nov 12
 [Phase 1: Docs] ───> [Phase 2: DB & Core] ───> [Early Review] ───> [Phase 3: Sandbox/UI] ───> [Final Submission]
 ```
 
-### Phase 1: Foundation & Governance (Status: Active)
+### Phase 1: Foundation & Governance (Implemented)
 - [x] Local Git repository setup & GitHub remote verification
 - [x] Non-negotiable financial rules definition (`AGENTS.md`)
 - [x] Foundational documentation suite (`README.md`, `PLAN.md`, `ARCHITECTURE.md`, `SANDBOX_GUIDE.md`, `HACKATHON.md`, `DECISIONS.md`)
@@ -25,98 +39,95 @@ Nov 1 - Nov 2        Nov 3 - Nov 4         Nov 5            Nov 6 - Nov 9       
 
 ---
 
-### Phase 2: Data Architecture & Deterministic Engines (Target: Nov 3 – Nov 4)
+### Phase 2: Data Architecture & Deterministic Engines (Partially Implemented)
 *Goal: Build the solid data layer and verified deterministic calculation engines before integrating AI or external APIs.*
-- Initialize Next.js App Router project with TypeScript and Zod.
-- Configure PostgreSQL schema:
-  - `merchants` (tenants)
-  - `accounts` & `ledger_entries` (all balances in integer cents)
-  - `invoices` (receivables with due date, status, integer cent amount)
-  - `bills` (payables with due date, status, integer cent amount)
-  - `audit_logs` (immutable record of all decisions, approvals, and transactions)
-  - `webhook_events` (processed PayPal event IDs for deduplication)
-- Build **Runway Engine**:
-  - Deterministic 30-day projection algorithm.
-  - Zero LLM dependency for financial calculation.
-  - Cash reserve threshold breach detection.
-- Unit tests for arithmetic precision (cents) and forecasting logic.
+
+- [x] Next.js App Router project with TypeScript and Zod.
+- [ ] **PLANNED — PostgreSQL schema**: no database exists today. The target schema would include `merchants`, `accounts`/`ledger_entries` (integer cents), `invoices`, `bills`, `audit_logs`, and `webhook_events`; these are **not implemented**.
+- [x] In-memory repository backing `GET /api/state` and all mutations.
+- [x] **Runway Engine**: deterministic projection, zero LLM dependency, reserve breach detection, deterministic `DEMO_AS_OF` clock.
+- [x] Unit tests for arithmetic precision (cents), forecasting logic, and payout policy.
 
 ---
 
-### Phase 3: Collections Engine & AI Copilot (Target: Nov 4 – Nov 5)
+### Phase 3: Collections Engine & AI Copilot (Implemented, with limitations)
 *Goal: Complete the invoice tracking and OpenRouter reminder drafting flow.*
-- Overdue invoice detection and aging categorization (Current, 1–15 days, 16–30 days, 30+ days).
-- OpenRouter integration with strict prompt templates:
-  - Prompt sanitization: Zero secrets, isolated merchant context.
-  - Generates courteous, firm, or urgent drafts depending on overdue severity.
-- Merchant approval workflow:
-  - UI staging area: review, edit, approve, or discard reminder.
-  - Approval state persisted to audit log.
-- PayPal payment generation:
-  - Generate sandbox invoice/order payment link to append to reminder.
+
+- [x] Overdue invoice detection and aging categorization derived from `dueDate`.
+- [x] OpenRouter integration with a minimal domain prompt and honest fallback template.
+- [x] Merchant review/edit/discard/approve flow; approval persisted server-side at `POST /api/reminders/approve`.
+- [x] Audit entry for approval (in-memory).
+- [ ] **PLANNED**: live PayPal invoice/order payment link creation. Current links are simulated.
 
 ---
 
 ### Phase 4: Early Review Checkpoint (Target: November 5, 2026)
 *Deliverables for Early Review*:
-- [ ] End-to-end working demonstration of Runway calculation.
-- [ ] Working invoice list in AG Grid.
-- [ ] AI-generated reminder drafting with human review/approval UI.
-- [ ] Verified local database schema with integer cents.
-- [ ] Interim architecture review and feedback consolidation.
+- [x] End-to-end working demonstration of Runway calculation.
+- [x] Working invoice list in AG Grid.
+- [x] AI-generated reminder drafting with human review/approval UI.
+- [ ] **PLANNED**: verified local database schema with integer cents. The prototype is in-memory only.
+- [x] Interim architecture review and feedback consolidation.
 
 ---
 
-### Phase 5: Payouts Engine & Reserve Protection (Target: Nov 6 – Nov 7)
+### Phase 5: Payouts Engine & Reserve Protection (Implemented)
 *Goal: Safe vendor bill scheduling without liquidity risk.*
-- Vendor bill management view with AG Grid.
-- Reserve-safe payout evaluator:
-  - Compares pending payout amount against projected 30-day runway.
-  - Blocks or warns if payout breaches `min_reserve_cents`.
-- Two-step merchant authorization interface (explicit button + confirmation modal).
-- PayPal Sandbox Payouts API payload generation with UUIDv4 idempotency keys.
+
+- [x] Vendor bill management view with AG Grid.
+- [x] Reserve-safe payout evaluator that blocks payouts breaching `minReserveCents`.
+- [x] Two-step merchant authorization interface (`confirmed: true` enforced server-side).
+- [x] PayPal Sandbox Payouts payload generation with UUID idempotency keys and in-process `IN_FLIGHT` state machine.
+- [ ] Live PayPal Sandbox dispatch verification (implemented but **unverified**; requires credentials + `PAYPAL_PAYOUTS_ENABLED=true`).
 
 ---
 
-### Phase 6: PayPal Sandbox Integration & Webhook Pipeline (Target: Nov 8 – Nov 9)
+### Phase 6: PayPal Sandbox Integration & Webhook Pipeline (NOT IMPLEMENTED)
 *Goal: Real-time settlement and automated ledger reconciliation.*
-- PayPal OAuth token client (cached, auto-refreshing).
-- Sandbox webhook listener endpoint (`/api/webhooks/paypal`):
-  - Cryptographic signature validation via PayPal's certificate verification endpoint.
-  - Replay prevention: check `webhook_events` table before processing.
-  - Handles `PAYMENT.CAPTURE.COMPLETED` and `INVOICING.INVOICE.PAID`.
-- Automatic ledger update (integer cents) triggering immediate runway recalculation.
+
+- [x] PayPal OAuth token client helper (used only on the gated sandbox rail).
+- [ ] **PLANNED**: Sandbox webhook listener endpoint (`/api/webhooks/paypal`) with signature validation.
+- [ ] **PLANNED**: Replay prevention via a durable webhook event table.
+- [ ] **PLANNED**: Handlers for `PAYMENT.CAPTURE.COMPLETED` and `INVOICING.INVOICE.PAID`.
+- [ ] **PLANNED**: automatic ledger update from webhooks; today settlement is simulated locally.
 
 ---
 
-### Phase 7: UI Polish, AG Studio, & AG Grid Integration (Target: Nov 9 – Nov 10)
-- Integrate AG Studio / Tailwind design system for high-trust financial cockpit.
-- AG Grid tables for high-density invoices and vendor bills with sorting, filtering, and status badges.
-- Real-time Runway visual chart (30-day projected balance line vs. reserve threshold line).
+### Phase 7: UI Polish & AG Grid Integration (Implemented)
+- [x] Tailwind design system for the financial cockpit.
+- [x] AG Grid tables for invoices, vendor bills, and audit logs with sorting/filtering/status badges.
+- [x] Runway visual chart (30-day projected balance vs. reserve threshold).
+- [x] Server-authoritative `/api/state` snapshot feeding the UI.
 
 ---
 
-### Phase 8: Deployment & Demo Hardening (Target: Nov 11 – Nov 12, 12:00 PM PST)
-- Deploy Next.js web application and PostgreSQL database to Render.
-- Configure public webhook URL with PayPal Sandbox webhook simulator.
-- Rehearse and record end-to-end Demo Video:
-  1. Merchant dashboard shows impending cash crunch.
-  2. Overdue invoice selected -> AI generates polite collection email.
-  3. Merchant approves -> Sandbox payment link dispatched.
-  4. Simulated customer payment via PayPal Sandbox.
-  5. Webhook verified -> Ledger updated -> Runway restored to green.
-  6. Merchant executes vendor payout safely under reserve protection.
-- Final submission on hackathon portal before Nov 12, 12:00 PM PST.
+### Phase 8: Deployment & Demo Hardening (Planned)
+- [ ] **PLANNED**: Deploy Next.js application and PostgreSQL database to Render (no database exists yet).
+- [ ] **PLANNED**: Configure public webhook URL with PayPal Sandbox webhook simulator (no webhook receiver exists yet).
+- [x] Deterministic demo scenario documented and reproducible via `DEMO_AS_OF`.
+- [ ] Record the end-to-end demo video and submit on the hackathon portal before Nov 12, 12:00 PM PST.
 
 ---
 
 ## 2. Risk Mitigation & Verification Matrix
 
-| Risk / Unknown | Impact | Mitigation Strategy | Owner |
+| Risk / Unknown | Impact | Mitigation Strategy | Status |
 |---|---|---|---|
-| Floating-point rounding errors | Critical | Enforce integer cents across DB, TypeScript types, and Zod schemas. | Backend |
-| LLM hallucinations in cash flow | Critical | Math is 100% deterministic code; LLM only formats text explanations. | AI Engine |
-| Unauthorized fund movement | Critical | AI has no access to PayPal tokens; all payouts require user click + confirmation. | Security |
-| Webhook replay or forgery | High | Verify PayPal signature and record event IDs in DB with unique constraint. | Integration |
-| PayPal Payouts Sandbox permissions | Medium | Test Sandbox Payouts early; fallback to mock simulation mode if delayed (strictly a simulation, never executes a real PayPal transaction). | Integration |
+| Floating-point rounding errors | Critical | Enforce integer cents across TypeScript types and Zod schemas. | Implemented |
+| LLM hallucinations in cash flow | Critical | Math is 100% deterministic code; LLM only drafts text. | Implemented |
+| Unauthorized fund movement | Critical | AI has no PayPal token access; payouts require `confirmed: true` and reserve checks. | Implemented |
+| Idempotency across restarts / instances | High | In-process key map only. A durable, multi-instance design is **not implemented**. | Limitation |
+| Webhook replay or forgery | High | Signature verification + durable event IDs. | **Not implemented** |
+| PayPal Payouts Sandbox permissions | Medium | Live rail disabled by default; manual scripts check auth/scope. Fallback is simulation only. | Unverified |
 
+---
+
+## 3. Honest Limitations for Judges
+
+- No authentication or user accounts; the app is a single-tenant demo.
+- No tenant isolation; do not deploy as a multi-tenant service.
+- No database persistence; all state resets on server restart.
+- No PayPal webhook receiver or signature verification.
+- No live Invoicing/Orders integration and no outbound email.
+- Idempotency is in-process only and not multi-instance safe.
+- PayPal live dispatch remains unverified unless sandbox credentials are supplied and `PAYPAL_PAYOUTS_ENABLED=true`.
