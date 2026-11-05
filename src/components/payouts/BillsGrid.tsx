@@ -28,6 +28,7 @@ const STATUS_LABELS: Record<Bill['status'], string> = {
   APPROVED: 'Approved',
   IN_FLIGHT: 'In Flight',
   DISBURSED: 'Disbursed',
+  FAILED: 'Failed',
 };
 
 export function BillsGrid({

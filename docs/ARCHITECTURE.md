@@ -254,7 +254,7 @@ flowchart TD
 
 ### 4.1 Current In-Memory Shapes — IMPLEMENTED
 
-- `MerchantAccount`: `{ id, businessName, currency, clearedBalanceCents, minReserveCents, sandboxConnected, payoutsScopeVerified }`
+- `MerchantAccount`: `{ id, businessName, currency, clearedBalanceCents, minReserveCents, payoutVerification? }` — the UI mode badge is derived from server state: simulation rail off = `SIMULATION`; rail on with no settled sandbox payout = `SANDBOX_UNVERIFIED`; first real `SUCCESS` records its batch id as `SANDBOX_VERIFIED`.
 - `Invoice`: `{ id, invoiceNumber, customerName, customerEmail, amountCents, dueDate, daysOverdue, status, description, paymentUrl?, lastReminderSentAt? }`
 - `Bill`: `{ id, billNumber, vendorName, vendorEmail, amountCents, dueDate, daysUntilDue, status, description, category }`
 - `AuditLogEntry`: `{ id, timestamp, actor, action, details, amountCents?, isSimulated }`

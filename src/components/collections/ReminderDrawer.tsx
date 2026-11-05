@@ -250,7 +250,7 @@ export function ReminderDrawer({
                 </span>
               ) : source === 'FALLBACK_TEMPLATE' ? (
                 <span className="inline-flex items-center space-x-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 font-semibold text-amber-800">
-                  <span>Fallback Template (Live OpenRouter AI unverified)</span>
+                  <span>AI fallback (template) — OpenRouter not verified</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center space-x-1 rounded-full bg-slate-100 border border-slate-200 px-2.5 py-0.5 font-semibold text-slate-600">

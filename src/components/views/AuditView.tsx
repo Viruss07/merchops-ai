@@ -119,12 +119,6 @@ export function AuditView({ logs }: AuditViewProps) {
             <span>Runway Deficit Monitored</span>
           </span>
         );
-      case 'SANDBOX_OAUTH_VERIFIED':
-        return (
-          <span className="inline-flex items-center space-x-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200">
-            <span>PayPal OAuth Token Verified</span>
-          </span>
-        );
       case 'SYSTEM_INITIALIZED':
         return (
           <span className="inline-flex items-center space-x-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200">

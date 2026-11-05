@@ -10,7 +10,14 @@ export type CurrencyCents = number;
 
 export type InvoiceStatus = 'PAID' | 'CURRENT' | 'OVERDUE';
 
-export type BillStatus = 'PENDING' | 'APPROVED' | 'DISBURSED' | 'IN_FLIGHT';
+export type BillStatus = 'PENDING' | 'APPROVED' | 'DISBURSED' | 'IN_FLIGHT' | 'FAILED';
+
+export type PayoutRailMode = 'SIMULATION' | 'SANDBOX_UNVERIFIED' | 'SANDBOX_VERIFIED';
+
+export interface PayoutVerification {
+  batchId: string;
+  verifiedAt: string;
+}
 
 export interface Invoice {
   id: string;
@@ -45,8 +52,7 @@ export interface MerchantAccount {
   currency: 'USD';
   clearedBalanceCents: CurrencyCents;
   minReserveCents: CurrencyCents;
-  sandboxConnected: boolean;
-  payoutsScopeVerified: boolean;
+  payoutVerification?: PayoutVerification;
 }
 
 export interface RunwayDay {
@@ -88,7 +94,11 @@ export interface StateSnapshot {
   invoices: Invoice[];
   bills: Bill[];
   auditLogs: AuditLogEntry[];
-  capabilities: { paypalSandboxEnabled: boolean };
+  capabilities: {
+    paypalSandboxEnabled: boolean;
+    payoutMode: PayoutRailMode;
+    verifiedBatchId: string | null;
+  };
   demoConfig: {
     asOfDate: string;
     forecastDays: number;

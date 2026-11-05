@@ -1,14 +1,7 @@
 'use client';
 
 import React from 'react';
-import {
-  ShieldCheck,
-  ShieldAlert,
-  RotateCcw,
-  AlertTriangle,
-  CheckCircle2,
-  FlaskConical,
-} from 'lucide-react';
+import { ShieldCheck, ShieldAlert, RotateCcw, FlaskConical } from 'lucide-react';
 import { formatCentsToUSD } from '@/lib/money';
 import type { MerchantAccount, StateSnapshot } from '@/types';
 
@@ -42,44 +35,27 @@ export function Navbar({ account, capabilities, onReset, resetting }: NavbarProp
           </div>
         </div>
 
-        {/* Integration Status Badges */}
+        {/* Verified-by-evidence payout rail status */}
         <div className="hidden lg:flex items-center space-x-3 text-xs">
-          {account.sandboxConnected ? (
-            <div className="flex items-center space-x-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-700 border border-emerald-200">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="font-medium">Sandbox Connected</span>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-amber-800 border border-amber-200">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              <span className="font-medium">Sandbox Disconnected</span>
-            </div>
-          )}
-
-          {account.payoutsScopeVerified ? (
-            <div className="flex items-center space-x-1 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 border border-slate-200 font-medium">
+          {capabilities.payoutMode === 'SANDBOX_VERIFIED' && capabilities.verifiedBatchId ? (
+            <div
+              className="flex items-center space-x-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-700 border border-emerald-200 font-medium"
+              title={`Last verified PayPal batch: ${capabilities.verifiedBatchId}`}
+            >
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Payouts Scope Verified</span>
+              <span className="font-mono">
+                Sandbox, verified {capabilities.verifiedBatchId}
+              </span>
             </div>
-          ) : (
-            <div className="flex items-center space-x-1 rounded-lg bg-amber-50 px-2.5 py-1 text-amber-800 border border-amber-200 font-medium">
+          ) : capabilities.payoutMode === 'SANDBOX_UNVERIFIED' ? (
+            <div className="flex items-center space-x-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-amber-800 border border-amber-200 font-medium">
               <ShieldAlert className="h-3.5 w-3.5" />
-              <span>Payouts Scope Unverified</span>
-            </div>
-          )}
-
-          {capabilities.paypalSandboxEnabled ? (
-            <div className="flex items-center space-x-1 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 border border-slate-200 font-medium">
-              <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
-              <span>PayPal Payouts Enabled</span>
+              <span>Sandbox, unverified</span>
             </div>
           ) : (
-            <div className="flex items-center space-x-1 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-600 border border-slate-200 font-medium">
+            <div className="flex items-center space-x-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 border border-slate-200 font-medium">
               <FlaskConical className="h-3.5 w-3.5 text-slate-500" />
-              <span>Payouts Simulation Only</span>
+              <span>Simulation mode</span>
             </div>
           )}
         </div>

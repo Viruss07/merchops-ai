@@ -387,7 +387,8 @@ export function PayoutApprovalModal({
                 >
                   <span className="font-bold block text-xs">Simulated Payout (Demo)</span>
                   <span className="text-[11px] text-slate-500 block mt-0.5">
-                    Recommended: verified local ledger settlement with full audit logging.
+                    Local simulation: deterministic in-memory settlement with full audit
+                    logging.
                   </span>
                 </button>
 

@@ -215,7 +215,7 @@ export function RunwayView({
           <div className="mt-2 text-2xl font-bold font-mono text-slate-900">
             {formatCentsToUSD(account.clearedBalanceCents)}
           </div>
-          <p className="mt-1 text-xs text-slate-500">Live bank & PayPal balance</p>
+          <p className="mt-1 text-xs text-slate-500">Demo ledger balance (in-memory)</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

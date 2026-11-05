@@ -43,7 +43,6 @@ const ACTION_LABELS: Record<string, string> = {
   INVOICE_PAID_SIMULATED: 'Invoice Settled',
   REMINDER_DRAFT_APPROVED: 'Draft Approved',
   RUNWAY_MONITOR_ACTIVE: 'Runway Monitored',
-  SANDBOX_OAUTH_VERIFIED: 'OAuth Verified',
   SYSTEM_INITIALIZED: 'Initialized',
 };
 
@@ -122,12 +121,6 @@ function renderActionBadge(action: string) {
       return (
         <span className="inline-flex items-center space-x-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200">
           <span>Runway Monitored</span>
-        </span>
-      );
-    case 'SANDBOX_OAUTH_VERIFIED':
-      return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200">
-          <span>OAuth Verified</span>
         </span>
       );
     case 'SYSTEM_INITIALIZED':
@@ -271,7 +264,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
         sortable: true,
         filter: true,
         getQuickFilterText: (params: GetQuickFilterTextParams<AuditLogEntry>) =>
-          params.data?.isSimulated ? 'Local Simulation' : 'System / Live',
+          params.data?.isSimulated ? 'Local Simulation' : 'System / Sandbox',
         cellRenderer: (params: ICellRendererParams<AuditLogEntry, boolean>) => {
           const log = params.data;
           if (!log) return null;
@@ -287,7 +280,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
           return (
             <div className="flex items-center h-full">
               <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
-                System / Live
+                System / Sandbox
               </span>
             </div>
           );

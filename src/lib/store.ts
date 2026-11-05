@@ -8,7 +8,14 @@
  * database layer without changing business logic or component interfaces.
  */
 
-import { MerchantAccount, Invoice, Bill, AuditLogEntry, StateSnapshot } from '@/types';
+import {
+  MerchantAccount,
+  Invoice,
+  Bill,
+  AuditLogEntry,
+  PayoutRailMode,
+  StateSnapshot,
+} from '@/types';
 import {
   DEFAULT_FORECAST_DAYS,
   DEFAULT_MIN_RESERVE_CENTS,
@@ -23,8 +30,6 @@ export const INITIAL_ACCOUNT: MerchantAccount = {
   currency: 'USD',
   clearedBalanceCents: 420000, // $4,200.00
   minReserveCents: DEFAULT_MIN_RESERVE_CENTS,
-  sandboxConnected: true,
-  payoutsScopeVerified: true,
 };
 
 function calculateDaysBetween(date1: string, date2: string): number {
@@ -114,14 +119,6 @@ export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
     isSimulated: false,
   },
   {
-    id: 'audit-002',
-    timestamp: '2026-11-03T09:05:00Z',
-    actor: 'SYSTEM',
-    action: 'SANDBOX_OAUTH_VERIFIED',
-    details: 'PayPal Sandbox OAuth token verified (HTTP 200). Payouts scope present in token.',
-    isSimulated: false,
-  },
-  {
     id: 'audit-003',
     timestamp: '2026-11-03T09:10:00Z',
     actor: 'AI_COPILOT',
@@ -162,6 +159,11 @@ const storeState: DemoStoreState =
 
 globalForStore.__merchops_demo_store__ = storeState;
 
+function getPayoutMode(): PayoutRailMode {
+  if (!PAYPAL_SANDBOX_ENABLED) return 'SIMULATION';
+  return storeState.account.payoutVerification ? 'SANDBOX_VERIFIED' : 'SANDBOX_UNVERIFIED';
+}
+
 export const demoStore = {
   getSnapshot(): StateSnapshot {
     return {
@@ -169,7 +171,11 @@ export const demoStore = {
       invoices: structuredClone(storeState.invoices),
       bills: structuredClone(storeState.bills),
       auditLogs: structuredClone(storeState.auditLogs),
-      capabilities: { paypalSandboxEnabled: PAYPAL_SANDBOX_ENABLED },
+      capabilities: {
+        paypalSandboxEnabled: PAYPAL_SANDBOX_ENABLED,
+        payoutMode: getPayoutMode(),
+        verifiedBatchId: storeState.account.payoutVerification?.batchId ?? null,
+      },
       demoConfig: {
         asOfDate: DEMO_AS_OF,
         forecastDays: DEFAULT_FORECAST_DAYS,
@@ -349,6 +355,13 @@ export const demoStore = {
     });
 
     storeState.idempotencyMap.set(input.idempotencyKey, { status: 'SUCCEEDED', response: input.response });
+
+    if (input.isRealPayPal && input.externalRef) {
+      storeState.account.payoutVerification = {
+        batchId: input.externalRef,
+        verifiedAt: new Date().toISOString(),
+      };
+    }
 
     return this.getSnapshot();
   },
