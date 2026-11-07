@@ -33,11 +33,7 @@ interface PayoutApprovalModalProps {
   isOpen: boolean;
   paypalSandboxEnabled: boolean;
   onClose: () => void;
-  onPayoutSuccess: (
-    billId: string,
-    isRealPayPal: boolean,
-    snapshot: StateSnapshot,
-  ) => void;
+  onPayoutSuccess: (billId: string, isRealPayPal: boolean, snapshot: StateSnapshot) => void;
   onNavigateToCollections?: () => void;
 }
 
@@ -110,12 +106,21 @@ export function PayoutApprovalModal({
   const reserve = account.minReserveCents;
   const estimatedFeeCents = calculatePayoutFeeCents(bill.amountCents);
   const feeCents = executionMode === 'PAYPAL_SANDBOX' ? estimatedFeeCents : 0;
-  const policy = evaluatePayoutPolicy({
-    currentBalanceCents: currentBalance,
-    minReserveCents: reserve,
-    billAmountCents: bill.amountCents,
-    feeCents,
-  });
+  const settled = Boolean(successMessage) || bill.status === 'DISBURSED';
+  const policy = settled
+    ? {
+        allowed: true,
+        postPayoutBalanceCents: currentBalance,
+        wouldBreach: false,
+        deficitCents: 0,
+        bufferCents: currentBalance - reserve,
+      }
+    : evaluatePayoutPolicy({
+        currentBalanceCents: currentBalance,
+        minReserveCents: reserve,
+        billAmountCents: bill.amountCents,
+        feeCents,
+      });
   const postPayoutBalance = policy.postPayoutBalanceCents;
   const wouldBreach = policy.wouldBreach;
   const deficitCents = policy.deficitCents;
@@ -144,11 +149,7 @@ export function PayoutApprovalModal({
 
       setOutcomeStatus(response.status);
       setSuccessMessage(response.message);
-      onPayoutSuccess(
-        response.billId,
-        response.mode === 'PAYPAL_SANDBOX',
-        response.snapshot,
-      );
+      onPayoutSuccess(response.billId, response.mode === 'PAYPAL_SANDBOX', response.snapshot);
 
       // Only close automatically once the payout is definitively settled.
       if (response.status === 'DISBURSED') {
@@ -162,11 +163,7 @@ export function PayoutApprovalModal({
 
       if (caught instanceof ApiError) {
         if (caught.snapshot) {
-          onPayoutSuccess(
-            bill.id,
-            executionMode === 'PAYPAL_SANDBOX',
-            caught.snapshot,
-          );
+          onPayoutSuccess(bill.id, executionMode === 'PAYPAL_SANDBOX', caught.snapshot);
         }
       }
     } finally {
@@ -178,7 +175,7 @@ export function PayoutApprovalModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           handleClose();
@@ -190,19 +187,19 @@ export function PayoutApprovalModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="payout-modal-title"
-        className="w-full max-w-xl my-auto max-h-[calc(100vh-2rem)] rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+        className="w-full max-w-xl my-auto max-h-[calc(100dvh-3rem)] rounded-lg bg-panel border border-rule overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between bg-slate-50 shrink-0">
+        <div className="border-b border-rule px-6 py-4 flex items-center justify-between bg-paper shrink-0">
           <div className="flex items-center space-x-2.5">
-            <div className="rounded-xl bg-blue-600 p-2 text-white">
+            <div className="rounded-lg bg-ink p-2 text-panel">
               <Send className="h-5 w-5" />
             </div>
             <div>
-              <h2 id="payout-modal-title" className="text-base font-bold text-slate-900">
+              <h2 id="payout-modal-title" className="text-base font-bold text-ink">
                 Two-Step Merchant Payout Authorization
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-ink-3">
                 Step 1: Review financial liquidity &bull; Step 2: Explicit authorization
               </p>
             </div>
@@ -212,15 +209,15 @@ export function PayoutApprovalModal({
             onClick={handleClose}
             disabled={locked}
             aria-label="Close payout authorization dialog"
-            className="rounded-lg p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-lg p-1.5 text-ink-3 hover:text-ink-2 hover:bg-rule transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-focus"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Financial Guardrail Alert */}
-        <div className="bg-blue-50 border-b border-blue-200 px-6 py-2.5 flex items-center space-x-2 text-xs text-blue-900 shrink-0">
-          <Lock className="h-4 w-4 text-blue-700 shrink-0" />
+        <div className="bg-rule border-b border-rule-strong px-6 py-2.5 flex items-center space-x-2 text-xs text-ink shrink-0">
+          <Lock className="h-4 w-4 text-ink-2 shrink-0" />
           <span>
             <strong>Financial Security Rule:</strong> AI cannot independently move money. All vendor
             disbursements require your explicit interactive confirmation.
@@ -230,49 +227,47 @@ export function PayoutApprovalModal({
         {/* Modal Body */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
           {/* Bill Overview Card */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+          <div className="rounded-lg border border-rule bg-paper p-4 space-y-3">
             <div className="flex justify-between items-start">
               <div>
-                <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider block">
+                <span className="text-[11px] font-mono text-ink-3 uppercase tracking-wider block">
                   Vendor & Bill
                 </span>
-                <span className="text-base font-bold text-slate-900">{bill.vendorName}</span>
-                <span className="text-xs text-slate-500 font-mono block">
+                <span className="text-base font-bold text-ink">{bill.vendorName}</span>
+                <span className="text-xs text-ink-3 font-mono block">
                   {bill.billNumber} &bull; {bill.category}
                 </span>
               </div>
               <div className="text-right">
-                <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider block">
+                <span className="text-[11px] font-mono text-ink-3 uppercase tracking-wider block">
                   Disbursement Amount
                 </span>
-                <span className="text-xl font-bold font-mono text-slate-900">
+                <span className="text-xl font-bold font-mono text-ink">
                   {formatCentsToUSD(bill.amountCents)}
                 </span>
-                <span className="text-xs text-slate-500 block">
-                  Due in {bill.daysUntilDue} days
-                </span>
+                <span className="text-xs text-ink-3 block">Due in {bill.daysUntilDue} days</span>
               </div>
             </div>
 
-            <div className="border-t border-slate-200 pt-2.5 text-xs text-slate-600">
-              <span className="font-semibold text-slate-700">Recipient Account: </span>
-              <span className="font-mono text-slate-800">{bill.vendorEmail}</span>
+            <div className="border-t border-rule pt-2.5 text-xs text-ink-2">
+              <span className="font-semibold text-ink-2">Recipient Account: </span>
+              <span className="font-mono text-ink">{bill.vendorEmail}</span>
             </div>
           </div>
 
           {/* Reserve Impact Analysis Card */}
           <div
-            className={`rounded-xl border p-4 space-y-2.5 ${
-              wouldBreach ? 'border-rose-300 bg-rose-50/70' : 'border-emerald-300 bg-emerald-50/70'
+            className={`rounded-lg border p-4 space-y-2.5 ${
+              wouldBreach ? 'border-blocked bg-blocked-field' : 'border-safe bg-safe-field'
             }`}
           >
             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider">
-              <span className={wouldBreach ? 'text-rose-900' : 'text-emerald-900'}>
+              <span className={wouldBreach ? 'text-blocked' : 'text-safe'}>
                 {wouldBreach ? 'Reserve Floor Breach Warning' : 'Working Capital Reserve Safe'}
               </span>
               <span
                 className={`inline-flex items-center space-x-1 rounded-full px-2 py-0.5 text-[11px] ${
-                  wouldBreach ? 'bg-rose-200 text-rose-900' : 'bg-emerald-200 text-emerald-900'
+                  wouldBreach ? 'bg-blocked-field text-blocked' : 'bg-safe-field text-safe'
                 }`}
               >
                 {wouldBreach ? (
@@ -286,25 +281,19 @@ export function PayoutApprovalModal({
 
             <div className="grid grid-cols-3 gap-2 text-xs font-mono pt-1">
               <div>
-                <span className="text-slate-500 block text-[10px] font-sans">
-                  Current Cleared Cash
-                </span>
-                <span className="font-bold text-slate-900">
-                  {formatCentsToUSD(currentBalance)}
-                </span>
+                <span className="text-ink-3 block text-[10px] font-sans">Current Cleared Cash</span>
+                <span className="font-bold text-ink">{formatCentsToUSD(currentBalance)}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px] font-sans">Payout Amount</span>
-                <span className="font-bold text-rose-700">
+                <span className="text-ink-3 block text-[10px] font-sans">Payout Amount</span>
+                <span className="font-bold text-blocked">
                   -{formatCentsToUSD(bill.amountCents)}
                 </span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px] font-sans">
-                  Projected Balance
-                </span>
+                <span className="text-ink-3 block text-[10px] font-sans">Projected Balance</span>
                 <span
-                  className={`font-bold ${wouldBreach ? 'text-rose-700 underline' : 'text-emerald-700'}`}
+                  className={`font-bold ${wouldBreach ? 'text-blocked underline' : 'text-safe'}`}
                 >
                   {formatCentsToUSD(postPayoutBalance)}
                 </span>
@@ -312,18 +301,20 @@ export function PayoutApprovalModal({
             </div>
 
             {executionMode === 'PAYPAL_SANDBOX' && (
-              <div className="flex items-center justify-between text-[11px] bg-blue-100/60 rounded px-2.5 py-1 text-blue-900">
+              <div className="flex items-center justify-between text-[11px] bg-rule rounded px-2.5 py-1 text-ink">
                 <span>PayPal Payout Fee (2%, max $1.00 USD):</span>
-                <span className="font-mono font-bold">-{formatCentsToUSD(estimatedFeeCents)} (included in reserve check)</span>
+                <span className="font-mono font-bold">
+                  -{formatCentsToUSD(estimatedFeeCents)} (included in reserve check)
+                </span>
               </div>
             )}
 
             {wouldBreach ? (
               <div className="pt-1 space-y-2">
-                <p className="text-xs text-rose-800 leading-normal">
+                <p className="text-xs text-blocked leading-normal">
                   Disbursing {formatCentsToUSD(bill.amountCents)} now would drop cash to{' '}
-                  {formatCentsToUSD(postPayoutBalance)}, breaching your{' '}
-                  {formatCentsToUSD(reserve)} safety floor by{' '}
+                  {formatCentsToUSD(postPayoutBalance)}, breaching your {formatCentsToUSD(reserve)}{' '}
+                  safety floor by{' '}
                   <strong className="underline">{formatCentsToUSD(deficitCents)}</strong>. This
                   payout is blocked until working capital is restored (e.g. by collecting overdue
                   invoices).
@@ -335,7 +326,7 @@ export function PayoutApprovalModal({
                       onClose();
                       onNavigateToCollections();
                     }}
-                    className="inline-flex items-center space-x-1.5 text-xs font-bold text-rose-900 bg-rose-200/80 hover:bg-rose-200 px-3 py-1.5 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="inline-flex items-center space-x-1.5 text-xs font-bold text-panel bg-blocked hover:opacity-90 px-3 py-1.5 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-blocked"
                   >
                     <span>Resolve Shortfall in Collections</span>
                     <ArrowRight className="h-3.5 w-3.5" />
@@ -343,7 +334,7 @@ export function PayoutApprovalModal({
                 )}
               </div>
             ) : (
-              <p className="text-xs text-emerald-800 pt-1 leading-normal">
+              <p className="text-xs text-safe pt-1 leading-normal">
                 Even after disbursing {formatCentsToUSD(bill.amountCents)}, the remaining{' '}
                 {formatCentsToUSD(postPayoutBalance)} safely exceeds your{' '}
                 {formatCentsToUSD(reserve)} reserve floor with a +
@@ -355,12 +346,12 @@ export function PayoutApprovalModal({
           {/* Idempotency Key & Execution Rail */}
           <div className="space-y-3 pt-1">
             {/* Idempotency Display */}
-            <div className="flex items-center justify-between text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-              <div className="flex items-center space-x-1.5 text-slate-600">
-                <Key className="h-3.5 w-3.5 text-slate-500" />
+            <div className="flex items-center justify-between text-xs bg-paper border border-rule rounded-lg px-3 py-2">
+              <div className="flex items-center space-x-1.5 text-ink-2">
+                <Key className="h-3.5 w-3.5 text-ink-3" />
                 <span className="font-semibold">PayPal-Request-Id:</span>
               </div>
-              <span className="font-mono text-[11px] text-slate-800 font-bold truncate max-w-[280px]">
+              <span className="font-mono text-[11px] text-ink font-bold truncate max-w-[280px]">
                 {idempotencyKey || 'Unavailable'}
               </span>
             </div>
@@ -369,7 +360,7 @@ export function PayoutApprovalModal({
             <div className="text-xs space-y-1.5">
               <span
                 id="execution-mode-label"
-                className="font-bold text-slate-700 uppercase tracking-wider block"
+                className="font-bold text-ink-2 uppercase tracking-wider block"
               >
                 Disbursement Execution Mode
               </span>
@@ -379,16 +370,15 @@ export function PayoutApprovalModal({
                   aria-pressed={executionMode === 'SIMULATION'}
                   onClick={() => setExecutionMode('SIMULATION')}
                   disabled={locked}
-                  className={`p-3 rounded-xl border text-left transition disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`p-3 rounded-lg border text-left transition disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-focus ${
                     executionMode === 'SIMULATION'
-                      ? 'border-blue-600 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      ? 'border-ink bg-rule text-ink ring-2 ring-focus'
+                      : 'border-rule bg-panel text-ink-2 hover:bg-paper'
                   }`}
                 >
                   <span className="font-bold block text-xs">Simulated Payout (Demo)</span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5">
-                    Local simulation: deterministic in-memory settlement with full audit
-                    logging.
+                  <span className="text-[11px] text-ink-3 block mt-0.5">
+                    Local simulation: deterministic in-memory settlement with full audit logging.
                   </span>
                 </button>
 
@@ -398,21 +388,21 @@ export function PayoutApprovalModal({
                   aria-disabled={paypalDisabled}
                   onClick={() => setExecutionMode('PAYPAL_SANDBOX')}
                   disabled={locked || paypalDisabled}
-                  className={`p-3 rounded-xl border text-left transition disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`p-3 rounded-lg border text-left transition disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-focus ${
                     executionMode === 'PAYPAL_SANDBOX'
-                      ? 'border-blue-600 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      ? 'border-ink bg-rule text-ink ring-2 ring-focus'
+                      : 'border-rule bg-panel text-ink-2 hover:bg-paper'
                   }`}
                 >
                   <span className="font-bold block text-xs">PayPal Sandbox API</span>
-                  <span className="text-[11px] text-slate-500 block mt-0.5">
-                    Dispatches a batch to POST /v1/payments/payouts in PayPal Sandbox.
-                    Settlement requires confirmation.
+                  <span className="text-[11px] text-ink-3 block mt-0.5">
+                    Dispatches a batch to POST /v1/payments/payouts in PayPal Sandbox. Settlement
+                    requires confirmation.
                   </span>
                 </button>
               </div>
               {paypalDisabled && (
-                <p className="text-[11px] text-amber-800">
+                <p className="text-[11px] text-risk">
                   PayPal Sandbox payouts are disabled in this environment. Simulated payout is the
                   only available execution mode.
                 </p>
@@ -422,9 +412,9 @@ export function PayoutApprovalModal({
             {inFlight && (
               <div
                 role="status"
-                className="rounded-xl border border-indigo-200 bg-indigo-50 p-3.5 text-xs text-indigo-900 flex items-start space-x-2"
+                className="rounded-lg border border-risk bg-risk-field p-3.5 text-xs text-risk flex items-start space-x-2"
               >
-                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-risk" />
                 <span>
                   A payout for this bill is already in flight. Duplicate disbursement is locked
                   until the in-flight payout settles or is reconciled.
@@ -436,10 +426,10 @@ export function PayoutApprovalModal({
             <div className="pt-2">
               <label
                 htmlFor="payout-confirm"
-                className={`flex items-start space-x-3 rounded-xl border p-3.5 transition ${
+                className={`flex items-start space-x-3 rounded-lg border p-3.5 transition ${
                   authorizationBlocked || locked
-                    ? 'border-slate-200 bg-slate-100 opacity-70 cursor-not-allowed'
-                    : 'border-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer'
+                    ? 'border-rule bg-rule opacity-70 cursor-not-allowed'
+                    : 'border-rule-strong bg-paper hover:bg-rule cursor-pointer'
                 }`}
               >
                 <input
@@ -448,9 +438,9 @@ export function PayoutApprovalModal({
                   disabled={authorizationBlocked || locked}
                   checked={confirmed}
                   onChange={(event) => setConfirmed(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  className="mt-0.5 h-4 w-4 rounded border-rule-strong text-ink focus:ring-focus"
                 />
-                <span className="text-xs text-slate-800 leading-normal">
+                <span className="text-xs text-ink leading-normal">
                   <strong>Explicit Merchant Confirmation:</strong> I have reviewed the post-payout
                   balance and authorize the disbursement of{' '}
                   <strong>{formatCentsToUSD(bill.amountCents)}</strong> to{' '}
@@ -464,10 +454,10 @@ export function PayoutApprovalModal({
           {error && (
             <div
               role="alert"
-              className="rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-800 space-y-1"
+              className="rounded-lg border border-blocked bg-blocked-field p-3.5 text-xs text-blocked space-y-1"
             >
               <div className="flex items-center space-x-1.5 font-bold">
-                <AlertCircle className="h-4 w-4 text-rose-600" />
+                <AlertCircle className="h-4 w-4 text-blocked" />
                 <span>Authorization Blocked</span>
               </div>
               <p>{error}</p>
@@ -478,17 +468,17 @@ export function PayoutApprovalModal({
             <div
               role="status"
               aria-live="polite"
-              className={`rounded-xl border p-3.5 text-xs space-y-1 ${
+              className={`rounded-lg border p-3.5 text-xs space-y-1 ${
                 outcomeStatus === 'IN_FLIGHT'
-                  ? 'border-indigo-300 bg-indigo-50 text-indigo-900'
-                  : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  ? 'border-risk bg-risk-field text-risk'
+                  : 'border-safe bg-safe-field text-safe'
               }`}
             >
               <div className="flex items-center space-x-1.5 font-bold">
                 {outcomeStatus === 'IN_FLIGHT' ? (
-                  <Clock className="h-4 w-4 text-indigo-600" />
+                  <Clock className="h-4 w-4 text-risk" />
                 ) : (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <CheckCircle2 className="h-4 w-4 text-safe" />
                 )}
                 <span>
                   {outcomeStatus === 'IN_FLIGHT'
@@ -502,12 +492,12 @@ export function PayoutApprovalModal({
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="border-t border-slate-200 p-4 bg-slate-50 flex items-center justify-between shrink-0">
+        <div className="border-t border-rule p-4 bg-paper flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={handleClose}
             disabled={locked}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="rounded-lg border border-rule-strong bg-panel px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-rule transition disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2"
           >
             Cancel
           </button>
@@ -522,12 +512,12 @@ export function PayoutApprovalModal({
               !idempotencyKey ||
               Boolean(successMessage)
             }
-            className={`inline-flex items-center space-x-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+            className={`inline-flex items-center space-x-2 rounded-lg px-5 py-2.5 text-sm font-bold text-panel transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
               successMessage
-                ? 'bg-emerald-600 focus:ring-emerald-500'
+                ? 'bg-safe focus:ring-safe'
                 : authorizationBlocked
-                  ? 'bg-slate-400 cursor-not-allowed shadow-none focus:ring-slate-400'
-                  : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 focus:ring-blue-500 disabled:opacity-50'
+                  ? 'bg-ink-3 cursor-not-allowed shadow-none focus:ring-focus'
+                  : 'bg-ink hover:opacity-90 focus:ring-focus disabled:opacity-50'
             }`}
           >
             {loading ? (

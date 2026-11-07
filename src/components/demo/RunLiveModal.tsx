@@ -22,7 +22,9 @@ interface RunLiveModalProps {
 }
 
 export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalProps) {
-  const [step, setStep] = useState<'IDLE' | 'INVOICE_CREATED' | 'INVOICE_SETTLED' | 'PAYOUT_DISPATCHED'>('IDLE');
+  const [step, setStep] = useState<
+    'IDLE' | 'INVOICE_CREATED' | 'INVOICE_SETTLED' | 'PAYOUT_DISPATCHED'
+  >('IDLE');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,7 +91,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) onClose();
       }}
@@ -139,9 +141,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
             {/* Step 1: Invoicing */}
             <div
               className={`rounded-xl border p-4 transition ${
-                step === 'IDLE'
-                  ? 'border-blue-400 bg-blue-50/50'
-                  : 'border-slate-200 bg-white'
+                step === 'IDLE' ? 'border-blue-400 bg-blue-50/50' : 'border-slate-200 bg-white'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -170,7 +170,11 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                         onClick={() => handleCopy(invoiceId, 'inv')}
                         className="p-1 hover:text-slate-900"
                       >
-                        {copiedKey === 'inv' ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                        {copiedKey === 'inv' ? (
+                          <Check className="h-3 w-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -197,7 +201,11 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                   disabled={loading}
                   className="mt-3 w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-blue-700 transition"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CreditCard className="h-4 w-4" />
+                  )}
                   <span>Create Invoice on PayPal</span>
                 </button>
               )}
@@ -223,7 +231,8 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                 ) : null}
               </div>
               <p className="text-xs text-slate-600 mt-1">
-                Once paid via the customer link, sync reconciliation clears the cash and eliminates the Day-10 runway deficit.
+                Once paid via the customer link, sync reconciliation clears the cash and eliminates
+                the Day-10 runway deficit.
               </p>
 
               {step === 'INVOICE_CREATED' && (
@@ -233,7 +242,11 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                   disabled={loading}
                   className="mt-3 w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-emerald-700 transition"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
                   <span>Sync Payment & Recompute Runway</span>
                 </button>
               )}
@@ -259,7 +272,8 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                 )}
               </div>
               <p className="text-xs text-slate-600 mt-1">
-                Dispatches an authorized vendor payout to POST /v1/payments/payouts with deterministic request ID and fee checking.
+                Dispatches an authorized vendor payout to POST /v1/payments/payouts with
+                deterministic request ID and fee checking.
               </p>
 
               {batchId && (
@@ -272,7 +286,11 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                       onClick={() => handleCopy(batchId, 'batch')}
                       className="p-1 hover:text-slate-900"
                     >
-                      {copiedKey === 'batch' ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                      {copiedKey === 'batch' ? (
+                        <Check className="h-3 w-3 text-emerald-600" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -285,7 +303,11 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                   disabled={loading}
                   className="mt-3 w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-indigo-700 transition"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                   <span>Authorize Payout on PayPal</span>
                 </button>
               )}

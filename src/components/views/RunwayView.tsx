@@ -61,7 +61,7 @@ export function RunwayView({
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-12">
-        <div className="rounded-lg border border-rule bg-panel p-4 shadow-sm sm:p-5 lg:col-span-8">
+        <div className="rounded-lg border border-rule bg-panel p-4 sm:p-5 lg:col-span-8">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-sm font-medium">30-day runway</h2>
             <span className="mono text-[11px] text-ink-3">as of {asOfDate}</span>
@@ -114,7 +114,7 @@ export function RunwayView({
           </div>
         </div>
 
-        <aside className="rounded-lg border border-rule bg-panel p-4 shadow-sm sm:p-5 lg:col-span-4">
+        <aside className="rounded-lg border border-rule bg-panel p-4 sm:p-5 lg:col-span-4">
           <div className="flex items-center gap-2">
             {forecast.hasReserveBreach ? (
               <ShieldAlert className="h-4 w-4 text-blocked" aria-hidden="true" />
@@ -191,7 +191,7 @@ export function RunwayView({
         </aside>
       </div>
 
-      <div className="rounded-lg border border-rule bg-panel p-4 shadow-sm sm:p-5">
+      <div className="rounded-lg border border-rule bg-panel p-4 sm:p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-medium">Day-by-day ledger</h3>

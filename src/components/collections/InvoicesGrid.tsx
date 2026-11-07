@@ -55,10 +55,10 @@ export function InvoicesGrid({
           if (!inv) return null;
           return (
             <div className="flex flex-col justify-center h-full py-1">
-              <span className="font-mono font-bold text-slate-900 leading-tight">
+              <span className="font-mono font-bold text-ink leading-tight">
                 {inv.invoiceNumber}
               </span>
-              <span className="text-[11px] text-slate-500 truncate max-w-xs leading-tight mt-0.5">
+              <span className="text-[11px] text-ink-3 truncate max-w-xs leading-tight mt-0.5">
                 {inv.description}
               </span>
             </div>
@@ -77,10 +77,10 @@ export function InvoicesGrid({
           if (!inv) return null;
           return (
             <div className="flex flex-col justify-center h-full py-1">
-              <span className="font-semibold text-slate-900 text-xs leading-tight truncate">
+              <span className="font-semibold text-ink text-xs leading-tight truncate">
                 {inv.customerName}
               </span>
-              <span className="font-mono text-[11px] text-slate-500 truncate leading-tight mt-0.5">
+              <span className="font-mono text-[11px] text-ink-3 truncate leading-tight mt-0.5">
                 {inv.customerEmail}
               </span>
             </div>
@@ -106,7 +106,7 @@ export function InvoicesGrid({
           if (params.value == null) return null;
           return (
             <div className="flex items-center justify-end h-full">
-              <span className="font-mono font-bold text-sm text-slate-900">
+              <span className="font-mono font-bold text-sm text-ink">
                 {formatCentsToUSD(params.value)}
               </span>
             </div>
@@ -125,8 +125,8 @@ export function InvoicesGrid({
           const inv = params.data;
           if (!inv) return null;
           return (
-            <div className="flex items-center space-x-1.5 h-full text-xs text-slate-700">
-              <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+            <div className="flex items-center space-x-1.5 h-full text-xs text-ink-2">
+              <Calendar className="h-3.5 w-3.5 text-ink-3 shrink-0" />
               <span className="font-mono">{inv.dueDate}</span>
             </div>
           );
@@ -146,7 +146,7 @@ export function InvoicesGrid({
           if (inv.status === 'PAID') {
             return (
               <div className="flex items-center h-full">
-                <span className="inline-flex items-center space-x-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                <span className="inline-flex items-center space-x-1 rounded-full bg-safe-field px-2.5 py-0.5 text-xs font-bold text-safe">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   <span>Paid</span>
                 </span>
@@ -156,7 +156,7 @@ export function InvoicesGrid({
           if (inv.status === 'OVERDUE') {
             return (
               <div className="flex items-center h-full">
-                <span className="inline-flex items-center space-x-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800">
+                <span className="inline-flex items-center space-x-1 rounded-full bg-blocked-field px-2.5 py-0.5 text-xs font-bold text-blocked">
                   <AlertCircle className="h-3.5 w-3.5" />
                   <span>Overdue</span>
                 </span>
@@ -165,7 +165,7 @@ export function InvoicesGrid({
           }
           return (
             <div className="flex items-center h-full">
-              <span className="inline-flex items-center space-x-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+              <span className="inline-flex items-center space-x-1 rounded-full bg-rule px-2.5 py-0.5 text-xs font-medium text-ink-2">
                 <Clock className="h-3.5 w-3.5" />
                 <span>Current</span>
               </span>
@@ -185,7 +185,7 @@ export function InvoicesGrid({
           if (!inv) return null;
           if (inv.status === 'PAID') {
             return (
-              <div className="flex items-center h-full text-xs text-slate-500">
+              <div className="flex items-center h-full text-xs text-ink-3">
                 <span>Settled</span>
               </div>
             );
@@ -193,12 +193,12 @@ export function InvoicesGrid({
           if (inv.daysOverdue > 0) {
             return (
               <div className="flex flex-col justify-center h-full">
-                <span className="inline-flex items-center space-x-1 text-xs font-bold text-rose-700">
+                <span className="inline-flex items-center space-x-1 text-xs font-bold text-blocked">
                   <AlertCircle className="h-3 w-3 shrink-0" />
                   <span>{inv.daysOverdue} days past due</span>
                 </span>
                 {inv.lastReminderSentAt && (
-                  <span className="text-[10px] text-indigo-700 font-medium truncate">
+                  <span className="text-[10px] text-risk font-medium truncate">
                     Reminder approved (
                     {new Date(inv.lastReminderSentAt).toLocaleTimeString([], {
                       hour: '2-digit',
@@ -211,7 +211,7 @@ export function InvoicesGrid({
             );
           }
           return (
-            <div className="flex items-center h-full text-xs text-slate-500">
+            <div className="flex items-center h-full text-xs text-ink-3">
               <span>On time</span>
             </div>
           );
@@ -232,7 +232,7 @@ export function InvoicesGrid({
           if (inv.status === 'PAID') {
             return (
               <div className="flex items-center h-full">
-                <span className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-700">
+                <span className="inline-flex items-center space-x-1 text-xs font-semibold text-safe">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                   <span>Settled to Cash Balance</span>
                 </span>
@@ -246,9 +246,9 @@ export function InvoicesGrid({
                 type="button"
                 onClick={() => onOpenDraft(inv)}
                 aria-label={`Draft AI collection reminder for ${inv.customerName}`}
-                className="inline-flex items-center space-x-1 rounded-lg border border-indigo-300 bg-indigo-50/90 px-2 py-1 text-xs font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="inline-flex items-center space-x-1 rounded-lg border border-risk bg-risk-field px-2 py-1 text-xs font-semibold text-risk hover:opacity-90 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-risk"
               >
-                <Sparkles className="h-3 w-3 text-indigo-600 shrink-0" />
+                <Sparkles className="h-3 w-3 text-risk shrink-0" />
                 <span>Remind</span>
               </button>
 
@@ -258,7 +258,7 @@ export function InvoicesGrid({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Pay invoice ${inv.invoiceNumber} on PayPal Sandbox`}
-                  className="inline-flex items-center space-x-1 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="inline-flex items-center space-x-1 rounded-lg bg-ink px-2.5 py-1 text-xs font-bold text-panel hover:opacity-90 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus"
                 >
                   <ExternalLink className="h-3 w-3 shrink-0" />
                   <span>Pay on PayPal</span>
@@ -268,9 +268,9 @@ export function InvoicesGrid({
                   type="button"
                   onClick={() => void onCreatePayPalInvoice(inv)}
                   aria-label={`Generate real PayPal Sandbox link for ${inv.invoiceNumber}`}
-                  className="inline-flex items-center space-x-1 rounded-lg border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="inline-flex items-center space-x-1 rounded-lg border border-rule-strong bg-rule px-2 py-1 text-xs font-semibold text-ink-2 hover:bg-rule transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus"
                 >
-                  <ExternalLink className="h-3 w-3 text-blue-600 shrink-0" />
+                  <ExternalLink className="h-3 w-3 text-ink shrink-0" />
                   <span>PayPal Link</span>
                 </button>
               ) : null}
@@ -279,9 +279,9 @@ export function InvoicesGrid({
                 type="button"
                 onClick={() => onOpenPaymentModal(inv)}
                 aria-label={`Simulate offline payment from ${inv.customerName}`}
-                className="inline-flex items-center space-x-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                className="inline-flex items-center space-x-1 rounded-lg border border-rule-strong bg-panel px-2 py-1 text-xs font-medium text-ink-2 hover:bg-paper transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus"
               >
-                <CreditCard className="h-3 w-3 text-slate-500 shrink-0" />
+                <CreditCard className="h-3 w-3 text-ink-3 shrink-0" />
                 <span>Simulate</span>
               </button>
             </div>
@@ -301,12 +301,12 @@ export function InvoicesGrid({
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-rule bg-panel">
       {/* Grid Toolbar: Search & Sponsor Header */}
-      <div className="border-b border-slate-200 bg-slate-50/70 px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="border-b border-rule bg-paper px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-2.5">
-          <h3 className="text-sm font-bold text-slate-800">Merchant Receivables Ledger</h3>
-          <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-blue-700">
+          <h3 className="text-sm font-bold text-ink">Merchant Receivables Ledger</h3>
+          <span className="rounded-full bg-rule border border-rule-strong px-2 py-0.5 text-[10px] font-mono font-semibold text-ink-2">
             Powered by AG Grid Community
           </span>
         </div>
@@ -318,22 +318,22 @@ export function InvoicesGrid({
               type="button"
               onClick={() => void onSyncInvoices()}
               aria-label="Reconcile and sync invoice status with PayPal Sandbox"
-              className="inline-flex items-center space-x-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="inline-flex items-center space-x-1.5 rounded-lg border border-rule-strong bg-panel px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-paper transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus"
             >
-              <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+              <RefreshCw className="h-3.5 w-3.5 text-ink-3" />
               <span>Sync with PayPal</span>
             </button>
           )}
 
           <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-ink-3 pointer-events-none" />
             <input
               type="text"
               value={quickFilterText}
               onChange={(e) => setQuickFilterText(e.target.value)}
               aria-label="Search invoices by number, customer, description, status, or dollar amount"
               placeholder="Search invoices, customers..."
-              className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+              className="w-full rounded-lg border border-rule-strong bg-panel pl-8 pr-3 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
             />
           </div>
         </div>

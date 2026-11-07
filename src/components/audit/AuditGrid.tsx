@@ -55,21 +55,21 @@ function renderActorBadge(actor: AuditLogEntry['actor']) {
   switch (actor) {
     case 'AI_COPILOT':
       return (
-        <span className="inline-flex items-center space-x-1 rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-200">
+        <span className="inline-flex items-center space-x-1 rounded bg-risk-field px-2 py-0.5 text-xs font-semibold text-risk border border-risk">
           <Bot className="h-3 w-3" />
           <span>AI Copilot</span>
         </span>
       );
     case 'MERCHANT':
       return (
-        <span className="inline-flex items-center space-x-1 rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
+        <span className="inline-flex items-center space-x-1 rounded bg-rule px-2 py-0.5 text-xs font-semibold text-ink-2 border border-rule-strong">
           <User className="h-3 w-3" />
           <span>Merchant</span>
         </span>
       );
     case 'PAYPAL_WEBHOOK':
       return (
-        <span className="inline-flex items-center space-x-1 rounded bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+        <span className="inline-flex items-center space-x-1 rounded bg-safe-field px-2 py-0.5 text-xs font-semibold text-safe border border-safe">
           <Webhook className="h-3 w-3" />
           <span>PayPal Webhook</span>
         </span>
@@ -77,7 +77,7 @@ function renderActorBadge(actor: AuditLogEntry['actor']) {
     case 'SYSTEM':
     default:
       return (
-        <span className="inline-flex items-center space-x-1 rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 border border-slate-200">
+        <span className="inline-flex items-center space-x-1 rounded bg-rule px-2 py-0.5 text-xs font-semibold text-ink-2 border border-rule">
           <Shield className="h-3 w-3" />
           <span>System</span>
         </span>
@@ -89,77 +89,77 @@ function renderActionBadge(action: string) {
   switch (action) {
     case 'PAYOUT_DISBURSED_SIMULATED':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-900 border border-blue-200">
-          <Send className="h-3 w-3 text-blue-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-rule px-2 py-0.5 text-xs font-bold text-ink border border-rule-strong">
+          <Send className="h-3 w-3 text-ink-2" />
           <span>Simulated Payout</span>
         </span>
       );
     case 'PAYOUT_APPROVED':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-900 border border-blue-200">
-          <CheckCircle2 className="h-3 w-3 text-blue-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-rule px-2 py-0.5 text-xs font-bold text-ink border border-rule-strong">
+          <CheckCircle2 className="h-3 w-3 text-ink-2" />
           <span>Payout Approved</span>
         </span>
       );
     case 'PAYOUT_IN_FLIGHT':
     case 'PAYOUT_ACCEPTED_PAYPAL':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-900 border border-indigo-300">
-          <Clock className="h-3 w-3 text-indigo-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-risk-field px-2 py-0.5 text-xs font-bold text-risk border border-risk">
+          <Clock className="h-3 w-3 text-risk" />
           <span>{action === 'PAYOUT_IN_FLIGHT' ? 'Payout In Flight' : 'PayPal Accepted'}</span>
         </span>
       );
     case 'PAYOUT_DISBURSED_PAYPAL':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-900 border border-emerald-300">
-          <CheckCircle2 className="h-3 w-3 text-emerald-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-safe-field px-2 py-0.5 text-xs font-bold text-safe border border-safe">
+          <CheckCircle2 className="h-3 w-3 text-safe" />
           <span>PayPal Payout Settled</span>
         </span>
       );
     case 'PAYOUT_FAILED':
     case 'PAYOUT_OUTCOME_UNKNOWN':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-900 border border-rose-300">
-          <ShieldAlert className="h-3 w-3 text-rose-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-blocked-field px-2 py-0.5 text-xs font-bold text-blocked border border-blocked">
+          <ShieldAlert className="h-3 w-3 text-blocked" />
           <span>{action === 'PAYOUT_FAILED' ? 'Payout Failed' : 'Outcome Unknown'}</span>
         </span>
       );
     case 'PAYOUT_BLOCKED_RESERVE_BREACH':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-900 border border-rose-300">
-          <ShieldAlert className="h-3 w-3 text-rose-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-blocked-field px-2 py-0.5 text-xs font-bold text-blocked border border-blocked">
+          <ShieldAlert className="h-3 w-3 text-blocked" />
           <span>Blocked (Reserve)</span>
         </span>
       );
     case 'INVOICE_PAID_SIMULATED':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-900 border border-emerald-200">
-          <CreditCard className="h-3 w-3 text-emerald-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-safe-field px-2 py-0.5 text-xs font-bold text-safe border border-safe">
+          <CreditCard className="h-3 w-3 text-safe" />
           <span>Invoice Settled</span>
         </span>
       );
     case 'REMINDER_DRAFT_APPROVED':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 border border-amber-300">
-          <Clock className="h-3 w-3 text-amber-700" />
+        <span className="inline-flex items-center space-x-1 rounded-md bg-risk-field px-2 py-0.5 text-xs font-bold text-risk border border-risk">
+          <Clock className="h-3 w-3 text-risk" />
           <span>Draft Approved</span>
         </span>
       );
     case 'RUNWAY_MONITOR_ACTIVE':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200">
+        <span className="inline-flex items-center space-x-1 rounded-md bg-rule px-2 py-0.5 text-xs font-semibold text-ink border border-rule">
           <span>Runway Monitored</span>
         </span>
       );
     case 'SYSTEM_INITIALIZED':
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800 border border-slate-200">
+        <span className="inline-flex items-center space-x-1 rounded-md bg-rule px-2 py-0.5 text-xs font-semibold text-ink border border-rule">
           <span>Initialized</span>
         </span>
       );
     default:
       return (
-        <span className="inline-flex items-center space-x-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-mono font-semibold text-slate-800">
+        <span className="inline-flex items-center space-x-1 rounded-md bg-rule px-2 py-0.5 text-xs font-mono font-semibold text-ink">
           <span>{action}</span>
         </span>
       );
@@ -184,7 +184,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
           if (!params.value) return null;
           return (
             <div className="flex items-center h-full">
-              <span className="font-mono text-xs text-slate-500">
+              <span className="font-mono text-xs text-ink-3">
                 {new Date(params.value).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
@@ -249,7 +249,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
           const log = params.data;
           if (!log || log.amountCents === undefined) {
             return (
-              <div className="flex items-center justify-end h-full text-xs text-slate-500">
+              <div className="flex items-center justify-end h-full text-xs text-ink-3">
                 <span>—</span>
               </div>
             );
@@ -263,12 +263,12 @@ export function AuditGrid({ logs }: AuditGridProps) {
               <span
                 className={`font-mono font-bold text-xs ${
                   isInflow
-                    ? 'text-emerald-700'
+                    ? 'text-safe'
                     : isOutflow
-                      ? 'text-slate-900'
+                      ? 'text-ink'
                       : isBlocked
-                        ? 'text-rose-700'
-                        : 'text-slate-700'
+                        ? 'text-blocked'
+                        : 'text-ink-2'
                 }`}
               >
                 {isInflow
@@ -299,7 +299,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
           if (log.isSimulated) {
             return (
               <div className="flex items-center h-full">
-                <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200">
+                <span className="rounded bg-risk-field px-2 py-0.5 text-[10px] font-bold text-risk border border-risk">
                   Local Simulation
                 </span>
               </div>
@@ -307,7 +307,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
           }
           return (
             <div className="flex items-center h-full">
-              <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
+              <span className="rounded bg-rule px-2 py-0.5 text-[10px] font-semibold text-ink-2 border border-rule">
                 System / Sandbox
               </span>
             </div>
@@ -325,7 +325,7 @@ export function AuditGrid({ logs }: AuditGridProps) {
           if (!params.value) return null;
           return (
             <div className="flex items-center h-full" title={params.value}>
-              <span className="text-xs text-slate-700 truncate">{params.value}</span>
+              <span className="text-xs text-ink-2 truncate">{params.value}</span>
             </div>
           );
         },
@@ -343,26 +343,26 @@ export function AuditGrid({ logs }: AuditGridProps) {
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-rule bg-panel">
       {/* Grid Toolbar */}
-      <div className="border-b border-slate-200 bg-slate-50/70 px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="border-b border-rule bg-paper px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-2.5">
-          <h3 className="text-sm font-bold text-slate-800">Audit Trail Table</h3>
-          <span className="rounded-full bg-blue-50 border border-blue-200/80 px-2 py-0.5 text-[10px] font-mono font-semibold text-blue-700">
+          <h3 className="text-sm font-bold text-ink">Audit Trail Table</h3>
+          <span className="rounded-full bg-rule border border-rule-strong px-2 py-0.5 text-[10px] font-mono font-semibold text-ink-2">
             Powered by AG Grid Community
           </span>
         </div>
 
         {/* Quick Filter Search */}
         <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-ink-3 pointer-events-none" />
           <input
             type="text"
             value={quickFilterText}
             onChange={(e) => setQuickFilterText(e.target.value)}
             aria-label="Search audit trail by actor, action, amount, mode, or details"
             placeholder="Search audit actions, amounts..."
-            className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+            className="w-full rounded-lg border border-rule-strong bg-panel pl-8 pr-3 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
           />
         </div>
       </div>

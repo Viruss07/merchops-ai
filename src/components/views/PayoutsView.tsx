@@ -1,15 +1,7 @@
 'use client';
 
 import React, { useCallback, useState } from 'react';
-import {
-  ShieldCheck,
-  ShieldAlert,
-  Send,
-  Lock,
-  ArrowRight,
-  Clock,
-  RefreshCw,
-} from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Send, Lock, ArrowRight, Clock, RefreshCw } from 'lucide-react';
 import { formatCentsToUSD } from '@/lib/money';
 import { ApiError, getErrorMessage, syncPayout } from '@/lib/apiClient';
 import { evaluatePayoutPolicy } from '@/lib/payoutPolicy';
@@ -21,11 +13,7 @@ interface PayoutsViewProps {
   bills: Bill[];
   account: MerchantAccount;
   paypalSandboxEnabled: boolean;
-  onDisburseBill: (
-    billId: string,
-    isRealPayPal: boolean,
-    snapshot: StateSnapshot,
-  ) => void;
+  onDisburseBill: (billId: string, isRealPayPal: boolean, snapshot: StateSnapshot) => void;
   onNavigateToCollections?: () => void;
 }
 
@@ -114,34 +102,29 @@ export function PayoutsView({
   return (
     <div className="space-y-6">
       {/* Dynamic Reserve Liquidity Banner */}
-      {focusBill &&
-        focusBill.status !== 'IN_FLIGHT' &&
-        focusPolicy &&
-        focusPolicy.wouldBreach && (
-        <div className="rounded-2xl border-2 border-rose-300 bg-rose-50/90 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {focusBill && focusBill.status !== 'IN_FLIGHT' && focusPolicy && focusPolicy.wouldBreach && (
+        <div className="rounded-lg border-2 border-blocked bg-blocked-field p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start space-x-3.5">
-            <div className="rounded-xl bg-rose-600 p-2.5 text-white shadow-md shadow-rose-600/20 shrink-0">
+            <div className="rounded-lg bg-blocked p-2.5 text-panel shrink-0">
               <ShieldAlert className="h-6 w-6" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-rose-200 px-2.5 py-0.5 text-xs font-bold text-rose-900 uppercase">
-                  Payout Policy Guardrail Active
-                </span>
-                <span className="text-xs font-semibold text-rose-800">
+                <span className="text-xs font-semibold text-blocked">Payout guardrail active</span>
+                <span className="text-xs font-semibold text-blocked">
                   Shortfall: -{formatCentsToUSD(focusPolicy.deficitCents)}
                 </span>
               </div>
-              <h3 className="mt-0.5 text-base font-bold text-slate-900">
+              <h3 className="mt-0.5 text-base font-semibold text-ink">
                 {focusBill.vendorName} disbursement ({formatCentsToUSD(focusBill.amountCents)})
                 blocked by Cash Reserve Policy
               </h3>
-              <p className="mt-0.5 text-xs text-slate-700 max-w-2xl leading-relaxed">
+              <p className="mt-0.5 text-xs text-ink-2 max-w-2xl leading-relaxed">
                 Paying this bill now would reduce cleared cash from{' '}
                 <strong>{formatCentsToUSD(currentBalance)}</strong> to{' '}
                 <strong>{formatCentsToUSD(focusPolicy.postPayoutBalanceCents)}</strong>, breaching
                 your <strong>{formatCentsToUSD(reserve)}</strong> safety floor by{' '}
-                <strong className="text-rose-700 underline">
+                <strong className="text-blocked underline">
                   {formatCentsToUSD(focusPolicy.deficitCents)}
                 </strong>
                 . Disbursing is locked until you collect outstanding receivables.
@@ -153,7 +136,7 @@ export function PayoutsView({
             <button
               type="button"
               onClick={onNavigateToCollections}
-              className="inline-flex items-center space-x-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-rose-600/20 hover:bg-rose-700 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
+              className="inline-flex items-center space-x-1.5 rounded-lg bg-blocked px-4 py-2 text-xs font-semibold text-panel hover:opacity-90 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blocked focus:ring-offset-2"
             >
               <span>Resolve in Collections</span>
               <ArrowRight className="h-4 w-4" />
@@ -163,19 +146,19 @@ export function PayoutsView({
       )}
 
       {focusBill && focusBill.status === 'IN_FLIGHT' && (
-        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="rounded-lg border border-risk bg-risk-field p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start space-x-3">
-            <div className="rounded-xl bg-indigo-600 p-2.5 text-white shadow-md shadow-indigo-600/20 shrink-0">
+            <div className="rounded-lg bg-risk p-2.5 text-panel shrink-0">
               <Clock className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Payout in flight</h3>
-              <p className="mt-0.5 text-xs text-slate-600">
+              <h3 className="text-base font-semibold text-ink">Payout in flight</h3>
+              <p className="mt-0.5 text-xs text-ink-2">
                 {inFlightCount === 1
                   ? 'One vendor payout is currently being processed.'
                   : `${inFlightCount} vendor payouts are currently being processed.`}{' '}
-                The ledger is not debited until PayPal confirms settlement. Duplicate
-                disbursement is locked.
+                The ledger is not debited until PayPal confirms settlement. Duplicate disbursement
+                is locked.
               </p>
             </div>
           </div>
@@ -183,12 +166,14 @@ export function PayoutsView({
             type="button"
             onClick={() => void handleSyncPayout(focusBill)}
             disabled={syncingBillId === focusBill.id}
-            className="inline-flex items-center space-x-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition disabled:opacity-60 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            className="inline-flex items-center space-x-1.5 rounded-lg bg-risk px-4 py-2 text-xs font-semibold text-panel hover:opacity-90 transition disabled:opacity-60 shrink-0 focus:outline-none focus:ring-2 focus:ring-risk focus:ring-offset-2"
           >
             <RefreshCw
               className={`h-4 w-4 ${syncingBillId === focusBill.id ? 'animate-spin motion-reduce:animate-none' : ''}`}
             />
-            <span>{syncingBillId === focusBill.id ? 'Checking PayPal…' : 'Sync PayPal Status'}</span>
+            <span>
+              {syncingBillId === focusBill.id ? 'Checking PayPal…' : 'Sync PayPal Status'}
+            </span>
           </button>
         </div>
       )}
@@ -196,36 +181,32 @@ export function PayoutsView({
       {syncError && (
         <div
           role="alert"
-          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800"
+          className="rounded-lg border border-blocked bg-blocked-field px-4 py-3 text-xs text-blocked"
         >
           {syncError}
         </div>
       )}
 
-      {focusBill &&
-        focusBill.status !== 'IN_FLIGHT' &&
-        focusPolicy &&
-        !focusPolicy.wouldBreach && (
-        <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/90 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {focusBill && focusBill.status !== 'IN_FLIGHT' && focusPolicy && !focusPolicy.wouldBreach && (
+        <div className="rounded-lg border-2 border-safe bg-safe-field p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start space-x-3.5">
-            <div className="rounded-xl bg-emerald-600 p-2.5 text-white shadow-md shadow-emerald-600/20 shrink-0">
+            <div className="rounded-lg bg-safe p-2.5 text-panel shrink-0">
               <ShieldCheck className="h-6 w-6" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-emerald-200 px-2.5 py-0.5 text-xs font-bold text-emerald-900 uppercase">
-                  Liquidity Restored &bull; Reserve Safe
+                <span className="text-xs font-semibold text-safe">
+                  Liquidity restored · reserve safe
                 </span>
-                <span className="text-xs font-semibold text-emerald-800">
-                  Buffer: +
-                  {formatCentsToUSD(focusPolicy.postPayoutBalanceCents - reserve)}
+                <span className="text-xs font-semibold text-safe">
+                  Buffer: +{formatCentsToUSD(focusPolicy.postPayoutBalanceCents - reserve)}
                 </span>
               </div>
-              <h3 className="mt-0.5 text-base font-bold text-slate-900">
+              <h3 className="mt-0.5 text-base font-semibold text-ink">
                 Working capital restored — {focusBill.vendorName} (
                 {formatCentsToUSD(focusBill.amountCents)}) ready for authorization
               </h3>
-              <p className="mt-0.5 text-xs text-slate-700 max-w-2xl leading-relaxed">
+              <p className="mt-0.5 text-xs text-ink-2 max-w-2xl leading-relaxed">
                 Post-payout balance of{' '}
                 <strong>{formatCentsToUSD(focusPolicy.postPayoutBalanceCents)}</strong> safely
                 exceeds your <strong>{formatCentsToUSD(reserve)}</strong> minimum reserve. You can
@@ -238,7 +219,7 @@ export function PayoutsView({
           <button
             type="button"
             onClick={() => handleOpenApproval(focusBill)}
-            className="inline-flex items-center space-x-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="inline-flex items-center space-x-1.5 rounded-lg bg-ink px-4 py-2 text-xs font-semibold text-panel hover:opacity-90 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2"
           >
             <Send className="h-4 w-4" />
             <span>Review & Authorize Payout</span>
@@ -247,13 +228,13 @@ export function PayoutsView({
       )}
 
       {!focusBill && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex items-center space-x-3">
-          <div className="rounded-xl bg-emerald-100 p-2.5 text-emerald-700">
+        <div className="rounded-lg border border-rule bg-panel p-5 flex items-center space-x-3">
+          <div className="rounded-lg bg-safe-field p-2.5 text-safe">
             <ShieldCheck className="h-6 w-6" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900">No open vendor bills</h3>
-            <p className="text-xs text-slate-500">
+            <h3 className="text-base font-semibold text-ink">No open vendor bills</h3>
+            <p className="text-xs text-ink-3">
               All payables are settled. New bills will appear here when they are scheduled.
             </p>
           </div>
@@ -261,34 +242,30 @@ export function PayoutsView({
       )}
 
       {/* Module Overview Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-lg border border-rule bg-panel p-5 gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <h2 className="text-lg font-bold text-slate-900">
-              Payouts (Accounts Payable & Vendor Bills)
-            </h2>
-            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-mono font-semibold text-slate-700">
+            <h2 className="text-base font-semibold text-ink">Payouts</h2>
+            <span className="rounded-md bg-rule px-2 py-0.5 text-xs font-mono font-semibold text-ink-2">
               Cleared Cash: {formatCentsToUSD(currentBalance)}
             </span>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Enforces a strict {formatCentsToUSD(reserve)} safety reserve floor. Two-step human
-            authorization required for all disbursements.
+          <p className="mt-0.5 text-xs text-ink-3">
+            A strict {formatCentsToUSD(reserve)} reserve floor. Two-step human authorization for
+            every disbursement.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+          <span className="rounded-lg bg-safe-field px-3 py-1 text-xs font-semibold text-safe border border-safe">
             Safety Floor: {formatCentsToUSD(reserve)}
           </span>
           {inFlightCount > 0 && (
-            <span className="inline-flex items-center space-x-1.5 rounded-lg bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 border border-indigo-200">
+            <span className="inline-flex items-center space-x-1.5 rounded-lg bg-risk-field px-3 py-1 text-xs font-semibold text-risk border border-risk">
               <Clock className="h-3 w-3" />
-              <span>
-                {inFlightCount} In Flight
-              </span>
+              <span>{inFlightCount} In Flight</span>
             </span>
           )}
-          <span className="inline-flex items-center space-x-1.5 rounded-lg bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
+          <span className="inline-flex items-center space-x-1.5 rounded-lg bg-rule px-3 py-1 text-xs font-semibold text-ink-2 border border-rule-strong">
             <Lock className="h-3 w-3" />
             <span>Rule: AI Proposes, Rules Decide</span>
           </span>
