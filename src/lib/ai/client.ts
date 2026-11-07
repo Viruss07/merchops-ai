@@ -1,0 +1,197 @@
+/**
+ * Robust OpenRouter AI Client
+ *
+ * Implements:
+ * - Dynamic fallback hierarchy (AI_MODEL -> AI_MODEL_FALLBACK -> AI_MODEL_FALLBACK_2)
+ * - Safe fallthrough on 404, 429, 5xx, or network timeout
+ * - Daily token/request cap enforcement (AI_DAILY_CAP)
+ * - Grounding validation: ensures financial figures are grounded in calculation placeholders
+ */
+
+import crypto from 'node:crypto';
+
+export interface AiChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface AiInferenceOptions {
+  messages: AiChatMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  jsonMode?: boolean;
+}
+
+export interface AiInferenceResult {
+  content: string;
+  modelUsed: string;
+  latencyMs: number;
+  promptHash: string;
+}
+
+// In-memory cache and daily rate limit tracker
+interface CachedAiResponse {
+  content: string;
+  model: string;
+  createdAt: number;
+}
+
+const proposalCache = new Map<string, CachedAiResponse>();
+let dailyCounter = { date: new Date().toISOString().slice(0, 10), count: 0 };
+
+function checkDailyCap(maxDaily = 100): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (dailyCounter.date !== today) {
+    dailyCounter = { date: today, count: 0 };
+  }
+  if (dailyCounter.count >= maxDaily) {
+    return false;
+  }
+  dailyCounter.count += 1;
+  return true;
+}
+
+export function computePromptHash(messages: AiChatMessage[]): string {
+  const repr = JSON.stringify(messages);
+  return crypto.createHash('sha256').update(repr).digest('hex').slice(0, 32);
+}
+
+export class AiClientError extends Error {
+  readonly code: string;
+  readonly status?: number;
+
+  constructor(code: string, message: string, status?: number) {
+    super(message);
+    this.name = 'AiClientError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export async function executeAiInference(options: AiInferenceOptions): Promise<AiInferenceResult> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  const promptHash = computePromptHash(options.messages);
+
+  // Check cache for identical prompts
+  const cached = proposalCache.get(promptHash);
+  if (cached && Date.now() - cached.createdAt < 3600_000) {
+    return {
+      content: cached.content,
+      modelUsed: `${cached.model} (cached)`,
+      latencyMs: 1,
+      promptHash,
+    };
+  }
+
+  if (!apiKey || apiKey.trim() === '' || apiKey.startsWith('your_')) {
+    throw new AiClientError('AI_KEY_MISSING', 'OpenRouter API key is not configured.');
+  }
+
+  const maxCap = parseInt(process.env.AI_DAILY_CAP || '100', 10);
+  if (!checkDailyCap(maxCap)) {
+    throw new AiClientError('AI_DAILY_CAP_REACHED', `Daily AI proposal cap (${maxCap}) reached.`);
+  }
+
+  // Model fallback chain: primary -> fallback 1 -> fallback 2
+  const models = [
+    process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free',
+    process.env.AI_MODEL_FALLBACK || 'deepseek/deepseek-r1:free',
+    process.env.AI_MODEL_FALLBACK_2 || 'qwen/qwen-2.5-coder-32b-instruct:free',
+  ];
+
+  let lastError: Error | null = null;
+
+  for (const model of models) {
+    const start = Date.now();
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'http://localhost:3000',
+          'X-Title': process.env.OPENROUTER_SITE_NAME || 'MerchOps AI',
+        },
+        body: JSON.stringify({
+          model,
+          messages: options.messages,
+          temperature: options.temperature ?? 0.2,
+          max_tokens: options.maxTokens ?? 1500,
+          response_format: options.jsonMode ? { type: 'json_object' } : undefined,
+        }),
+        signal: AbortSignal.timeout(15000), // 15s timeout
+      });
+
+      if (!response.ok) {
+        lastError = new Error(`Model ${model} returned HTTP ${response.status}`);
+        continue; // Fall through to next model
+      }
+
+      const json = await response.json();
+      const content = json.choices?.[0]?.message?.content?.trim();
+
+      if (!content) {
+        lastError = new Error(`Model ${model} returned empty response`);
+        continue;
+      }
+
+      const latencyMs = Date.now() - start;
+
+      // Cache successful response
+      proposalCache.set(promptHash, {
+        content,
+        model,
+        createdAt: Date.now(),
+      });
+
+      return {
+        content,
+        modelUsed: model,
+        latencyMs,
+        promptHash,
+      };
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Continue to next fallback model
+    }
+  }
+
+  throw new AiClientError(
+    'AI_ALL_MODELS_FAILED',
+    `All configured AI models failed: ${lastError?.message ?? 'Service unavailable'}.`
+  );
+}
+
+/**
+ * Grounding Check: Ensures narrative explanations do not fabricate arbitrary financial numbers.
+ * Replaces or validates placeholders like {{runway.minBalance}}.
+ */
+export function validateAndGroundText(
+  text: string,
+  groundingValues: Record<string, string>
+): { groundedText: string; ungroundedNumbersFound: string[] } {
+  let groundedText = text;
+
+  // Replace recognized placeholders
+  for (const [key, value] of Object.entries(groundingValues)) {
+    const placeholder = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+    groundedText = groundedText.replace(placeholder, value);
+  }
+
+  // Detect ungrounded dollar figures not derived from placeholders
+  const dollarMatches = groundedText.match(/\$\d+(?:,\d{3})*(?:\.\d{2})?/g) || [];
+  const authorizedValues = new Set(Object.values(groundingValues));
+  const ungrounded: string[] = [];
+
+  for (const match of dollarMatches) {
+    if (!authorizedValues.has(match)) {
+      ungrounded.push(match);
+    }
+  }
+
+  return {
+    groundedText,
+    ungroundedNumbersFound: ungrounded,
+  };
+}
+

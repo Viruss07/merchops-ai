@@ -19,6 +19,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "ag-grid-community": "^36.2.0",
     "ag-grid-react": "^36.2.0",
     "clsx": "^2.1.1",
