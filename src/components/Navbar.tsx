@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ShieldCheck, ShieldAlert, RotateCcw, FlaskConical, PlayCircle, Shield } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { formatCentsToUSD } from '@/lib/money';
 import type { MerchantAccount, StateSnapshot } from '@/types';
 
@@ -13,78 +13,70 @@ interface NavbarProps {
   resetting?: boolean;
 }
 
-export function Navbar({ account, capabilities, onReset, resetting }: NavbarProps) {
+function Mark() {
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <h1 className="sr-only">MerchOps AI Financial Operations Dashboard</h1>
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-        {/* Brand & Identity */}
-        <div className="flex items-center space-x-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 shadow-md shadow-blue-500/20 text-white font-bold text-lg">
-            M
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-xl font-bold tracking-tight text-slate-900">MerchOps AI</span>
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200/60">
-                PayPal AI Hackathon 2026
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Autonomous Financial Operations & Cash Flow Copilot
-            </p>
-          </div>
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M2.5 15.5h19"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeDasharray="2.5 2.5"
+      />
+    </svg>
+  );
+}
+
+export function Navbar({ account, capabilities, onReset, resetting }: NavbarProps) {
+  const mode =
+    capabilities.payoutMode === 'SANDBOX_VERIFIED'
+      ? 'Sandbox verified'
+      : capabilities.payoutMode === 'SANDBOX_UNVERIFIED'
+        ? 'Sandbox unverified'
+        : 'Simulation';
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-rule bg-paper/90 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 rounded-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+          >
+            <Mark />
+            <span className="whitespace-nowrap text-[15px] font-semibold tracking-[-0.01em]">
+              MerchOps <span className="font-normal text-ink-3">AI</span>
+            </span>
+          </Link>
+          <span className="hidden items-center gap-1.5 text-[11px] text-ink-3 sm:flex">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                capabilities.payoutMode === 'SIMULATION' ? 'bg-ink-3' : 'bg-safe'
+              }`}
+              aria-hidden="true"
+            />
+            {mode}
+          </span>
         </div>
 
-        {/* Verified-by-evidence payout rail status & quick links */}
-        <div className="hidden lg:flex items-center space-x-3 text-xs">
+        <div className="flex items-center gap-3 sm:gap-5">
           <Link
             href="/demo"
-            className="flex items-center space-x-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-blue-700 border border-blue-200 font-semibold hover:bg-blue-100 transition shadow-xs"
-            title="Open Judge Mode with Interactive Demo Tour & Live Test Modal"
+            className="hidden text-xs text-ink-2 transition-colors duration-200 hover:text-ink md:inline"
           >
-            <PlayCircle className="h-3.5 w-3.5 text-blue-600" />
-            <span>Judge Mode (/demo)</span>
+            Judge mode
           </Link>
           <Link
             href="/bench"
-            className="flex items-center space-x-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 border border-slate-200 font-semibold hover:bg-slate-200 transition"
-            title="Inspect Guardrail Bench with 12 Adversarial Traps"
+            className="hidden text-xs text-ink-2 transition-colors duration-200 hover:text-ink md:inline"
           >
-            <Shield className="h-3.5 w-3.5 text-slate-600" />
-            <span>Bench (12 Traps)</span>
+            Bench
           </Link>
 
-          {capabilities.payoutMode === 'SANDBOX_VERIFIED' && capabilities.verifiedBatchId ? (
-            <div
-              className="flex items-center space-x-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-700 border border-emerald-200 font-medium"
-              title={`Last verified PayPal batch: ${capabilities.verifiedBatchId}`}
-            >
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-              <span className="font-mono">
-                Sandbox, verified {capabilities.verifiedBatchId}
-              </span>
-            </div>
-          ) : capabilities.payoutMode === 'SANDBOX_UNVERIFIED' ? (
-            <div className="flex items-center space-x-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-amber-800 border border-amber-200 font-medium">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              <span>Sandbox, unverified</span>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 border border-slate-200 font-medium">
-              <FlaskConical className="h-3.5 w-3.5 text-slate-500" />
-              <span>Simulation mode</span>
-            </div>
-          )}
-        </div>
-
-        {/* Balance & Demo Reset */}
-        <div className="flex items-center space-x-3">
-          <div className="hidden sm:flex flex-col text-right">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Cleared Cash
-            </span>
-            <span className="text-lg font-bold text-slate-900 font-mono">
+          <div className="flex items-baseline gap-2">
+            <span className="hidden text-[10px] text-ink-3 sm:inline">Cleared</span>
+            <span className="money text-sm font-semibold">
               {formatCentsToUSD(account.clearedBalanceCents)}
             </span>
           </div>
@@ -94,14 +86,15 @@ export function Navbar({ account, capabilities, onReset, resetting }: NavbarProp
             onClick={onReset}
             disabled={resetting}
             aria-label="Reset demo data to initial state"
-            className="flex items-center space-x-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 active:scale-95 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-rule-strong px-2.5 py-1.5 text-[11px] font-medium text-ink-2 transition-colors duration-200 hover:bg-panel hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
           >
             <RotateCcw
-              className={`h-3.5 w-3.5 text-slate-500 ${
+              className={`h-3.5 w-3.5 ${
                 resetting ? 'animate-spin motion-reduce:animate-none' : ''
               }`}
+              aria-hidden="true"
             />
-            <span>{resetting ? 'Resetting…' : 'Reset Demo'}</span>
+            <span className="hidden sm:inline">{resetting ? 'Resetting…' : 'Reset'}</span>
           </button>
         </div>
       </div>

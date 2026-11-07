@@ -1,9 +1,12 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "MerchOps AI — Financial Operations Copilot",
-  description: "AI-powered merchant cash flow forecasting, collections, and vendor payout guardrails.",
+  title: "MerchOps AI — An AI CFO that can't touch your money",
+  description:
+    'A 30-day cash runway with a hard reserve floor. The AI proposes plans; deterministic rules decide. Nothing moves without merchant approval.',
 };
 
 export default function RootLayout({
@@ -12,11 +15,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-        {children}
-      </body>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <body className="min-h-screen bg-paper text-ink antialiased">{children}</body>
     </html>
   );
 }
-

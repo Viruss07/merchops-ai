@@ -1,58 +1,71 @@
 # MerchOps AI — Product Specification
 
-> **Positioning**: *"An AI CFO that can't touch your money."*  
-> **Target Audience**: Small & medium specialty retailers, ecommerce operators, and wholesale merchants managing tight cashflow cycles.  
+> **Positioning**: *"An AI CFO that can't touch your money."*
+> **Audience**: Small and mid-size merchants managing tight cash cycles.
 > **Event**: PayPal AI Hackathon 2026.
 
 ---
 
-## 1. Problem Statement & Market Reality
+## 1. Problem
 
-For small businesses, **cash flow insolvency kills profitable companies**. 82% of small business failures stem from cash flow mismanagement—not lack of demand.
-- Customer invoices are paid late (average 12–28 days overdue).
-- Supplier inventory bills mature unpredictably with severe late penalties or shipping halts.
-- Existing tools either provide retrospective accounting (QuickBooks/Xero) or generic dashboards without guardrails.
-- Unchecked AI agents cannot be trusted to independently execute financial transactions: prompt injections, missing fees, and model hallucinations risk catastrophic double-spend or reserve breaches.
+A merchant can be profitable and still fail because the timing of cash does not match the timing of
+bills. Receivables arrive late, supplier bills mature on a fixed date, and the account carries a
+minimum reserve the business cannot safely spend below. Generic dashboards show the past; generic AI
+agents are trusted to act. Neither gives a merchant a clear answer to one question:
 
----
-
-## 2. Core Value Proposition
-
-MerchOps AI couples **predictive AI intelligence** with a **deterministic financial safety engine**:
-1. **Integer-Cent Cash Runway Engine**: Computes exact cleared cash vs. mandatory safety reserve floor ($2,000.00).
-2. **Deterministic Rules Prover**: AI proposes 3 alternative plans ("Safest", "Fastest Cash", "Lowest Cost"); deterministic code mathematically proves each plan safe before any human can approve it.
-3. **Real PayPal Rail**: Live PayPal Invoicing v2 for receivables acceleration and fee-inclusive PayPal Payouts for supplier disbursements.
-4. **Agentic Commerce via MCP**: Exposes strictly read-only and propose-only tools to external agents (e.g. Claude Desktop) via the Model Context Protocol.
+> **On which day does cash cross the floor, by how much, and what is the safest move before then?**
 
 ---
 
-## 3. Five Design & Operating Principles
+## 2. What MerchOps does
 
-1. **AI Proposes, Rules Decide**: AI output is strictly a candidate proposal (`ai_proposals`). Only deterministic server code applies financial policy and executes mutations.
-2. **Cash State is Always Visible**: Clear distinction between Cleared Cash, Reserved/In-Flight Cash, and Projected Horizon Cash.
-3. **Single Next Action**: Every screen highlights the highest-leverage financial action (e.g., accelerating overdue receivables before bills mature).
-4. **Clickable Proof**: Every external identifier (`invoice_id`, `payout_batch_id`, `request_id`, `event_id`) is shown in monospace and links directly to verified sandbox evidence.
-5. **Radical Honesty**: Offline simulations are explicitly tagged `[SIMULATED]`. Real PayPal interactions are tagged `[VERIFIED]`.
+MerchOps projects a 30-day cash runway from the cleared balance and the known bills and invoices,
+with a hard reserve floor. It then separates two jobs:
 
----
+1. **The AI proposes.** Given the runway, it drafts candidate plans ("Safest", "Fastest Cash",
+   "Lowest Cost") with a narrative. Each plan is a proposal, never an action.
+2. **Deterministic rules decide.** Server-side code replays every plan through the same runway math
+   and policy checks. A plan that crosses the floor is rejected with the exact day and deficit. The
+   merchant can still attempt a payout; the same policy blocks it, and the block is written to an
+   append-only audit log.
 
-## 4. Competitive Differentiation & Moat
-
-| Capability | Generic AI Finance Tools | MerchOps AI |
-|---|---|---|
-| **Disbursement Execution** | Direct tool-call without guardrails | Two-step interactive human confirmation |
-| **Idempotency** | Random UUIDv4 per request | Deterministic `(entity_id, action)` key |
-| **Transaction Fees** | Ignored by model | Fee-inclusive reserve floor check |
-| **Audit Trail** | Mutable application logs | PostgreSQL trigger-enforced append-only log |
-| **Agentic Access** | Unrestricted read/write | Read & propose-only Model Context Protocol |
+Money moves only after an explicit merchant approval, through a two-step payout flow. Every external
+identifier is shown in monospace and every financial event is recorded.
 
 ---
 
-## 5. Accessibility & Inclusivity (WCAG 2.2 AA)
+## 3. Product truths (what the demo actually does)
 
-- **Color Contrast**: 4.5:1 minimum text contrast; semantic states (safe/breach) reinforced with icons (`ShieldCheck`, `AlertCircle`), not color alone.
-- **Screen Reader Support**: Money figures explicitly tagged with formatted text and integer cent descriptors.
-- **Focus States**: High-visibility focus rings on all interactive buttons, modal dialogs, and AG Grid cells.
-- **Motion Reduction**: `motion-reduce:animate-none` applied to all loading skeletons and pulse animations.
-- **Viewport Support**: Fully responsive layout verified down to 390px mobile screens.
+- All amounts are **integer cents**. Display formatting lives in `src/lib/money.ts`.
+- The runway is computed deterministically in `src/lib/runway.ts`; the LLM never computes figures.
+- The proposal engine (`src/lib/plan/engine.ts`) returns `source: OPENROUTER_AI | DETERMINISTIC_RULES`.
+  Without an OpenRouter key it falls back to deterministic rules and labels itself as such.
+- Payout policy lives in `src/lib/payoutPolicy.ts`; the API is authoritative. The UI may display a
+  pre-check, but the server decision is final.
+- The demo store is in-memory. "Simulated" payouts and simulated invoice receipts are labelled
+  `[SIMULATED]`; real PayPal Sandbox activity is labelled `[VERIFIED]`.
+- The reserve floor in the demo scenario is **$2,000.00**; cleared cash is **$4,200.00** on 2026-11-03.
+- The demo scenario breaches the floor on **Day 10** by **$800.00** (Acme Supplies, $3,000.00).
 
+---
+
+## 4. Principles
+
+1. **AI proposes, rules decide.** AI output is a candidate. Deterministic server code applies policy
+   and executes mutations.
+2. **The floor is visible.** Cleared cash, the reserve floor and the projected path are on screen
+   together, always.
+3. **One next action.** Every screen names the highest-leverage move and makes it the primary button.
+4. **Clickable proof.** `invoice_id`, `payout_batch_id`, `request_id` and `event_id` are shown in
+   monospace and can be traced to the audit log.
+5. **Radical honesty.** Simulated and verified states are labelled. No invented metrics.
+
+---
+
+## 5. Accessibility (WCAG 2.2 AA)
+
+- 4.5:1 minimum text contrast; state is reinforced with text and iconography, not colour alone.
+- Money figures expose the formatted amount and the integer-cent value to assistive tech.
+- Visible focus rings on every interactive control and grid cell.
+- `prefers-reduced-motion` removes travel and scale, keeps colour and order, and stops auto-advance.
+- Layout verified at 1280×800 and 390×844.

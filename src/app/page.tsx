@@ -18,19 +18,16 @@ import type { StateSnapshot, Invoice } from '@/types';
 import { Navbar } from '@/components/Navbar';
 import { Navigation } from '@/components/Navigation';
 import type { TabKey } from '@/components/Navigation';
+import { Journey } from '@/components/journey/Journey';
 import { RunwayView } from '@/components/views/RunwayView';
 
 function ViewSkeleton({ label }: { label: string }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="animate-pulse motion-reduce:animate-none space-y-5"
-    >
+    <div role="status" aria-live="polite" className="space-y-5">
       <span className="sr-only">{label}</span>
-      <div className="h-24 rounded-2xl border border-slate-200 bg-white" />
-      <div className="h-14 rounded-xl border border-slate-200 bg-white" />
-      <div className="h-80 rounded-2xl border border-slate-200 bg-white" />
+      <div className="h-24 rounded-lg border border-rule bg-panel" />
+      <div className="h-14 rounded-md border border-rule bg-panel" />
+      <div className="h-80 rounded-lg border border-rule bg-panel" />
     </div>
   );
 }
@@ -52,48 +49,38 @@ const AuditView = dynamic(
 
 function PageSkeleton() {
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center space-x-3 animate-pulse motion-reduce:animate-none">
-            <div className="h-10 w-10 rounded-xl bg-slate-200" />
-            <div className="space-y-1.5">
-              <div className="h-4 w-40 rounded bg-slate-200" />
-              <div className="h-3 w-64 rounded bg-slate-100" />
-            </div>
+    <div className="flex min-h-screen flex-col bg-paper text-ink">
+      <header className="border-b border-rule">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="h-5 w-5 rounded-full border border-rule-strong" />
+            <div className="h-4 w-32 rounded bg-rule" />
           </div>
-          <div className="h-8 w-28 rounded-lg bg-slate-100 animate-pulse motion-reduce:animate-none" />
+          <div className="h-4 w-20 rounded bg-rule" />
         </div>
       </header>
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8 py-4">
-            {[0, 1, 2, 3].map((item) => (
-              <div
-                key={item}
-                className="h-4 w-24 rounded bg-slate-100 animate-pulse motion-reduce:animate-none"
-              />
-            ))}
-          </div>
-        </div>
-      </div>
       <main
-        className="flex-1 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 w-full"
+        className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6"
         role="status"
         aria-live="polite"
       >
         <span className="sr-only">Loading financial state</span>
-        <div className="space-y-6 animate-pulse motion-reduce:animate-none">
-          <div className="h-32 rounded-2xl border border-slate-200 bg-white" />
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {[0, 1, 2, 3].map((item) => (
-              <div
-                key={item}
-                className="h-28 rounded-2xl border border-slate-200 bg-white"
-              />
+        <div className="space-y-6">
+          <div className="flex gap-2">
+            {[0, 1, 2, 3, 4].map((item) => (
+              <div key={item} className="h-8 flex-1 rounded bg-rule" />
             ))}
           </div>
-          <div className="h-72 rounded-2xl border border-slate-200 bg-white" />
+          <div className="grid gap-6 lg:grid-cols-12">
+            <div className="space-y-3 lg:col-span-5">
+              <div className="h-10 w-full rounded bg-rule" />
+              <div className="h-10 w-4/5 rounded bg-rule" />
+              <div className="h-4 w-full rounded bg-rule" />
+              <div className="h-4 w-3/4 rounded bg-rule" />
+              <div className="h-10 w-40 rounded bg-rule" />
+            </div>
+            <div className="h-64 rounded-lg border border-rule bg-panel lg:col-span-7" />
+          </div>
         </div>
       </main>
     </div>
@@ -107,6 +94,7 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
 
   const loadState = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -144,6 +132,7 @@ export default function DashboardPage() {
     try {
       const response = await resetDemo();
       setSnapshot(response.snapshot);
+      setResetSignal((value) => value + 1);
     } catch (error) {
       setResetError(getErrorMessage(error));
     } finally {
@@ -179,41 +168,35 @@ export default function DashboardPage() {
   );
 
   const handlePayoutSuccess = useCallback(
-    (billId: string, isRealPayPal: boolean, next: StateSnapshot) => {
+    (_billId: string, _isRealPayPal: boolean, next: StateSnapshot) => {
       setSnapshot(next);
     },
     [],
   );
 
-  const handleCreatePayPalInvoice = useCallback(
-    async (invoice: Invoice) => {
-      try {
-        const response = await createPayPalInvoice(invoice.id);
-        setSnapshot(response.snapshot);
-      } catch (error) {
-        if (error instanceof ApiError && error.snapshot) {
-          setSnapshot(error.snapshot);
-        }
-        throw error;
+  const handleCreatePayPalInvoice = useCallback(async (invoice: Invoice) => {
+    try {
+      const response = await createPayPalInvoice(invoice.id);
+      setSnapshot(response.snapshot);
+    } catch (error) {
+      if (error instanceof ApiError && error.snapshot) {
+        setSnapshot(error.snapshot);
       }
-    },
-    [],
-  );
+      throw error;
+    }
+  }, []);
 
-  const handleSyncInvoices = useCallback(
-    async () => {
-      try {
-        const response = await syncInvoices();
-        setSnapshot(response.snapshot);
-      } catch (error) {
-        if (error instanceof ApiError && error.snapshot) {
-          setSnapshot(error.snapshot);
-        }
-        throw error;
+  const handleSyncInvoices = useCallback(async () => {
+    try {
+      const response = await syncInvoices();
+      setSnapshot(response.snapshot);
+    } catch (error) {
+      if (error instanceof ApiError && error.snapshot) {
+        setSnapshot(error.snapshot);
       }
-    },
-    [],
-  );
+      throw error;
+    }
+  }, []);
 
   const forecast = useMemo(() => {
     if (!snapshot) return null;
@@ -228,7 +211,8 @@ export default function DashboardPage() {
   }, [snapshot]);
 
   const overdueCount = useMemo(
-    () => (snapshot ? snapshot.invoices.filter((invoice) => invoice.status === 'OVERDUE').length : 0),
+    () =>
+      snapshot ? snapshot.invoices.filter((invoice) => invoice.status === 'OVERDUE').length : 0,
     [snapshot],
   );
 
@@ -245,33 +229,33 @@ export default function DashboardPage() {
     [snapshot],
   );
 
+  const openTab = useCallback((tab: TabKey) => {
+    setActiveTab(tab);
+    requestAnimationFrame(() => {
+      document.getElementById('cockpit')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
   if (loading && !snapshot) {
     return <PageSkeleton />;
   }
 
   if (loadError && !snapshot) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-        <div
-          role="alert"
-          className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-sm"
-        >
-          <div className="flex items-start space-x-3">
-            <div className="rounded-xl bg-rose-100 p-2.5 text-rose-700">
-              <AlertTriangle className="h-6 w-6" />
-            </div>
+      <div className="flex min-h-screen items-center justify-center bg-paper px-4">
+        <div role="alert" className="w-full max-w-md rounded-lg border border-blocked bg-panel p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 text-blocked" aria-hidden="true" />
             <div className="flex-1">
-              <h1 className="text-base font-bold text-slate-900">
-                Unable to load financial state
-              </h1>
-              <p className="mt-1 text-sm text-slate-600">{loadError}</p>
+              <h1 className="text-base font-semibold">Unable to load financial state</h1>
+              <p className="mt-1 text-sm text-ink-2">{loadError}</p>
               <button
                 type="button"
                 onClick={() => void loadState()}
-                className="mt-4 inline-flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
               >
-                <RefreshCw className="h-4 w-4" />
-                <span>Retry</span>
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Retry
               </button>
             </div>
           </div>
@@ -285,7 +269,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="flex min-h-screen flex-col bg-paper text-ink">
       <Navbar
         account={snapshot.account}
         capabilities={snapshot.capabilities}
@@ -293,86 +277,106 @@ export default function DashboardPage() {
         resetting={resetting}
       />
 
-      <Navigation
-        activeTab={activeTab}
-        onChangeTab={setActiveTab}
-        overdueCount={overdueCount}
-        pendingBillsCount={openBillsCount}
-        hasBreach={forecast.hasReserveBreach}
-        firstBreachDay={forecast.firstBreachDay}
-      />
+      <main className="flex-1">
+        <Journey
+          key={resetSignal}
+          snapshot={snapshot}
+          forecast={forecast}
+          onSnapshot={setSnapshot}
+          onOpenAudit={() => openTab('audit')}
+          onOpenPayouts={() => openTab('payouts')}
+        />
 
-      <main className="flex-1 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 w-full">
-        {resetError && (
-          <div
-            role="alert"
-            className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
-          >
-            <div className="flex items-start space-x-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-              <div>
-                <p className="font-semibold">Reset failed</p>
-                <p className="text-rose-700">{resetError}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setResetError(null)}
-              aria-label="Dismiss reset error"
-              className="rounded-md p-1 text-rose-600 transition hover:bg-rose-100"
-            >
-              <X className="h-4 w-4" />
-            </button>
+        <section id="cockpit" className="scroll-mt-14 border-t border-rule">
+          <div className="mx-auto max-w-6xl px-4 pb-2 pt-8 sm:px-6">
+            <h2 className="text-lg font-semibold tracking-tight">The cockpit</h2>
+            <p className="mt-1 text-sm text-ink-2">
+              The operational views behind the instrument. Same numbers, same rules.
+            </p>
           </div>
-        )}
 
-        <div
-          role="tabpanel"
-          id={`panel-${activeTab}`}
-          aria-labelledby={`tab-${activeTab}`}
-          aria-busy={resetting}
-        >
-          {activeTab === 'runway' && (
-            <RunwayView
-              account={snapshot.account}
-              invoices={snapshot.invoices}
-              bills={snapshot.bills}
-              asOfDate={snapshot.demoConfig.asOfDate}
-              forecastDays={snapshot.demoConfig.forecastDays}
-              onNavigateToCollections={() => setActiveTab('collections')}
-              onNavigateToPayouts={() => setActiveTab('payouts')}
-            />
-          )}
+          <Navigation
+            activeTab={activeTab}
+            onChangeTab={setActiveTab}
+            overdueCount={overdueCount}
+            pendingBillsCount={openBillsCount}
+            hasBreach={forecast.hasReserveBreach}
+            firstBreachDay={forecast.firstBreachDay}
+          />
 
-          {activeTab === 'collections' && (
-            <CollectionsView
-              invoices={snapshot.invoices}
-              onSimulatePayment={handleSimulatePayment}
-              onReminderSent={handleReminderSent}
-              onCreatePayPalInvoice={handleCreatePayPalInvoice}
-              onSyncInvoices={handleSyncInvoices}
-            />
-          )}
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+            {resetError && (
+              <div
+                role="alert"
+                className="mb-5 flex items-start justify-between gap-3 rounded-lg border border-blocked bg-blocked-field p-4 text-sm"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle
+                    className="mt-0.5 h-4 w-4 shrink-0 text-blocked"
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <p className="font-semibold text-blocked">Reset failed</p>
+                    <p className="text-ink-2">{resetError}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setResetError(null)}
+                  aria-label="Dismiss reset error"
+                  className="rounded-sm p-1 text-blocked transition-colors hover:bg-blocked-field focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
 
-          {activeTab === 'payouts' && (
-            <PayoutsView
-              bills={snapshot.bills}
-              account={snapshot.account}
-              paypalSandboxEnabled={snapshot.capabilities.paypalSandboxEnabled}
-              onDisburseBill={handlePayoutSuccess}
-              onNavigateToCollections={() => setActiveTab('collections')}
-            />
-          )}
+            <div
+              role="tabpanel"
+              id={`panel-${activeTab}`}
+              aria-labelledby={`tab-${activeTab}`}
+              aria-busy={resetting}
+            >
+              {activeTab === 'runway' && (
+                <RunwayView
+                  account={snapshot.account}
+                  invoices={snapshot.invoices}
+                  bills={snapshot.bills}
+                  asOfDate={snapshot.demoConfig.asOfDate}
+                  forecastDays={snapshot.demoConfig.forecastDays}
+                  onNavigateToCollections={() => setActiveTab('collections')}
+                  onNavigateToPayouts={() => setActiveTab('payouts')}
+                />
+              )}
 
-          {activeTab === 'audit' && <AuditView logs={snapshot.auditLogs} />}
-        </div>
+              {activeTab === 'collections' && (
+                <CollectionsView
+                  invoices={snapshot.invoices}
+                  onSimulatePayment={handleSimulatePayment}
+                  onReminderSent={handleReminderSent}
+                  onCreatePayPalInvoice={handleCreatePayPalInvoice}
+                  onSyncInvoices={handleSyncInvoices}
+                />
+              )}
+
+              {activeTab === 'payouts' && (
+                <PayoutsView
+                  bills={snapshot.bills}
+                  account={snapshot.account}
+                  paypalSandboxEnabled={snapshot.capabilities.paypalSandboxEnabled}
+                  onDisburseBill={handlePayoutSuccess}
+                  onNavigateToCollections={() => setActiveTab('collections')}
+                />
+              )}
+
+              {activeTab === 'audit' && <AuditView logs={snapshot.auditLogs} />}
+            </div>
+          </div>
+        </section>
       </main>
 
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
-        <p>
-          MerchOps AI &bull; Built for PayPal AI Hackathon 2026 &bull; Strict Financial Rule: AI
-          proposes, rules decide. AI never moves money.
-        </p>
+      <footer className="border-t border-rule py-4 text-center text-[11px] text-ink-3">
+        MerchOps AI · PayPal AI Hackathon 2026 · AI proposes, rules decide. AI never moves money.
       </footer>
     </div>
   );

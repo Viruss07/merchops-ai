@@ -1,16 +1,25 @@
 import type { StateSnapshot, Invoice } from '@/types';
+import type { CashPlanProposal } from '@/lib/plan/types';
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly snapshot?: StateSnapshot;
+  readonly details?: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string, snapshot?: StateSnapshot) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    snapshot?: StateSnapshot,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.snapshot = snapshot;
+    this.details = details;
     Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
@@ -82,6 +91,7 @@ interface ErrorBody {
   error?: string;
   message?: string;
   snapshot?: StateSnapshot;
+  [key: string]: unknown;
 }
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
@@ -114,11 +124,13 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = (payload ?? {}) as ErrorBody;
+    const { error, message, snapshot, ...details } = body;
     throw new ApiError(
       response.status,
-      body.error ?? 'HTTP_ERROR',
-      body.message ?? `Request failed with status ${response.status}.`,
-      body.snapshot,
+      error ?? 'HTTP_ERROR',
+      message ?? `Request failed with status ${response.status}.`,
+      snapshot,
+      details,
     );
   }
 
@@ -127,6 +139,14 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 
 export function getState(signal?: AbortSignal): Promise<StateSnapshot> {
   return request<StateSnapshot>('/api/state', { method: 'GET', signal });
+}
+
+export function proposePlan(signal?: AbortSignal): Promise<CashPlanProposal> {
+  return request<CashPlanProposal>('/api/ai/propose-plan', {
+    method: 'POST',
+    body: JSON.stringify({}),
+    signal,
+  });
 }
 
 export function simulatePayment(invoiceId: string): Promise<SimulatePaymentResponse> {

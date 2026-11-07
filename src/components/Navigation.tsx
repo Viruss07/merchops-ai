@@ -32,50 +32,61 @@ export function Navigation({
   const tabs = [
     {
       key: 'runway' as TabKey,
-      label: 'Runway & Forecast',
+      label: 'Runway',
+      ariaLabel: hasBreach ? `Runway, ${breachLabel}` : 'Runway, healthy',
       icon: TrendingUp,
       badge: hasBreach ? (
-        <span className="flex items-center space-x-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
-          <AlertCircle className="h-3 w-3" />
-          <span>{breachLabel}</span>
+        <span className="inline-flex items-center gap-1 rounded-sm bg-blocked-field px-1.5 py-0.5 text-[10px] font-medium text-blocked">
+          <AlertCircle className="h-3 w-3" aria-hidden="true" />
+          {breachLabel}
         </span>
       ) : (
-        <span className="flex items-center space-x-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-          <CheckCircle2 className="h-3 w-3" />
-          <span>Healthy</span>
+        <span className="inline-flex items-center gap-1 rounded-sm bg-safe-field px-1.5 py-0.5 text-[10px] font-medium text-safe">
+          <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+          Healthy
         </span>
       ),
     },
     {
       key: 'collections' as TabKey,
-      label: 'Collections (AR)',
+      label: 'Collections',
+      ariaLabel: overdueCount > 0 ? `Collections, ${overdueCount} overdue` : 'Collections',
       icon: FileText,
-      badge: overdueCount > 0 ? (
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-          {overdueCount} Overdue
-        </span>
-      ) : null,
+      badge:
+        overdueCount > 0 ? (
+          <span className="rounded-sm bg-risk-field px-1.5 py-0.5 text-[10px] font-medium text-risk">
+            {overdueCount} overdue
+          </span>
+        ) : null,
     },
     {
       key: 'payouts' as TabKey,
-      label: 'Payouts (AP)',
+      label: 'Payouts',
+      ariaLabel: pendingBillsCount > 0 ? `Payouts, ${pendingBillsCount} open` : 'Payouts',
       icon: Send,
-      badge: pendingBillsCount > 0 ? (
-        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
-          {pendingBillsCount} Open
-        </span>
-      ) : null,
+      badge:
+        pendingBillsCount > 0 ? (
+          <span className="rounded-sm bg-rule px-1.5 py-0.5 text-[10px] font-medium text-ink-2">
+            {pendingBillsCount} open
+          </span>
+        ) : null,
     },
     {
       key: 'audit' as TabKey,
-      label: 'Audit Trail',
+      label: 'Audit',
+      ariaLabel: 'Audit',
       icon: History,
       badge: null,
     },
   ];
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') {
+    if (
+      event.key !== 'ArrowRight' &&
+      event.key !== 'ArrowLeft' &&
+      event.key !== 'Home' &&
+      event.key !== 'End'
+    ) {
       return;
     }
     event.preventDefault();
@@ -90,9 +101,13 @@ export function Navigation({
   };
 
   return (
-    <nav aria-label="Financial modules" className="border-b border-slate-200 bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div role="tablist" aria-label="Financial modules" className="flex space-x-8 overflow-x-auto py-1">
+    <nav aria-label="Financial modules" className="border-b border-rule bg-paper">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div
+          role="tablist"
+          aria-label="Financial modules"
+          className="flex flex-wrap gap-x-5 sm:gap-x-8"
+        >
           {tabs.map((tab, index) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
@@ -103,19 +118,23 @@ export function Navigation({
                 type="button"
                 role="tab"
                 aria-selected={isActive}
+                aria-label={tab.ariaLabel}
                 aria-controls={`panel-${tab.key}`}
                 tabIndex={isActive ? 0 : -1}
                 onClick={() => onChangeTab(tab.key)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
-                className={`flex items-center space-x-2 border-b-2 py-3.5 text-sm font-medium transition whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                className={`flex items-center gap-1.5 border-b-2 py-3 text-[13px] font-medium transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper sm:text-sm ${
                   isActive
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                    ? 'border-ink text-ink'
+                    : 'border-transparent text-ink-3 hover:text-ink-2'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
+                <Icon
+                  className={`hidden h-3.5 w-3.5 sm:block ${isActive ? 'text-ink' : 'text-ink-3'}`}
+                  aria-hidden="true"
+                />
                 <span>{tab.label}</span>
-                {tab.badge}
+                {tab.badge && <span className="hidden sm:inline-flex">{tab.badge}</span>}
               </button>
             );
           })}
