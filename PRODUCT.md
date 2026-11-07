@@ -55,3 +55,4 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 - **Focus States**: High-visibility focus rings on all interactive buttons, modal dialogs, and AG Grid cells.
 - **Motion Reduction**: `motion-reduce:animate-none` applied to all loading skeletons and pulse animations.
 - **Viewport Support**: Fully responsive layout verified down to 390px mobile screens.
+

@@ -58,3 +58,4 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 - **Customer Sandbox Email (Payer)**: `buyer@personal.example.com`
 - **Vendor Sandbox Email (Receiver)**: `vendor@personal.example.com`
 - **Audit & Proof**: All real transaction IDs, batch IDs, and webhook logs are visible on the dashboard in monospace with 1-click copy.
+

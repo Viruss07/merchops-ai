@@ -44,3 +44,4 @@
 - **Focus Rings**: Dual-layer focus ring (`focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`).
 - **Loading Indicators**: Accessible spinners with `sr-only` aria labels.
 - **Reduced Motion**: Full support for users with vestibular sensitivities via CSS `prefers-reduced-motion: reduce`.
+
