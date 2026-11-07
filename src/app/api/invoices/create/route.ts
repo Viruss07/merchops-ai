@@ -90,7 +90,18 @@ export async function POST(req: NextRequest) {
       return jsonError(
         error.status && error.status >= 400 && error.status < 500 ? error.status : 502,
         error.code,
-        `PayPal Invoicing error: ${error.message}`
+        error.message.startsWith('PayPal Invoicing')
+          ? error.message
+          : `PayPal Invoicing error: ${error.message}`,
+        {
+          status: error.status,
+          details: error.details,
+          snapshot: demoStore.getSnapshot(),
+          hint:
+            error.status === 403
+              ? 'To enable Invoicing v2, log into developer.paypal.com -> Apps & Credentials -> select your App -> check "Invoicing" under App Settings and save. Alternatively, use "Simulate Pay" to test collections.'
+              : undefined,
+        }
       );
     }
     return jsonError(500, 'SERVER_ERROR', 'Failed to create PayPal invoice.');

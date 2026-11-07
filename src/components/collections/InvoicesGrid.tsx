@@ -22,6 +22,7 @@ import {
   Search,
   ExternalLink,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 
 interface InvoicesGridProps {
@@ -40,6 +41,7 @@ export function InvoicesGrid({
   onSyncInvoices,
 }: InvoicesGridProps) {
   const [quickFilterText, setQuickFilterText] = useState('');
+  const [creatingId, setCreatingId] = useState<string | null>(null);
 
   const visibleInvoices = useMemo(() => {
     const q = quickFilterText.trim().toLowerCase();
@@ -285,12 +287,24 @@ export function InvoicesGrid({
               ) : onCreatePayPalInvoice ? (
                 <button
                   type="button"
-                  onClick={() => void onCreatePayPalInvoice(inv)}
+                  disabled={creatingId === inv.id}
+                  onClick={async () => {
+                    setCreatingId(inv.id);
+                    try {
+                      await onCreatePayPalInvoice(inv);
+                    } finally {
+                      setCreatingId(null);
+                    }
+                  }}
                   aria-label={`Generate real PayPal Sandbox link for ${inv.invoiceNumber}`}
-                  className="inline-flex items-center space-x-1 rounded-lg border border-rule-strong bg-rule px-2 py-1 text-xs font-semibold text-ink-2 hover:bg-rule transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus"
+                  className="inline-flex items-center space-x-1 rounded-lg border border-rule-strong bg-rule px-2 py-1 text-xs font-semibold text-ink-2 hover:bg-rule transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-focus disabled:opacity-50"
                 >
-                  <ExternalLink className="h-3 w-3 text-ink shrink-0" />
-                  <span>PayPal Link</span>
+                  {creatingId === inv.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-ink shrink-0" />
+                  ) : (
+                    <ExternalLink className="h-3 w-3 text-ink shrink-0" />
+                  )}
+                  <span>{creatingId === inv.id ? 'Connecting…' : 'PayPal Link'}</span>
                 </button>
               ) : null}
 
@@ -308,7 +322,7 @@ export function InvoicesGrid({
         },
       },
     ],
-    [onOpenDraft, onOpenPaymentModal, onCreatePayPalInvoice],
+    [onOpenDraft, onOpenPaymentModal, onCreatePayPalInvoice, creatingId],
   );
 
   const defaultColDef = useMemo<ColDef<Invoice>>(
@@ -412,12 +426,24 @@ export function InvoicesGrid({
                   ) : onCreatePayPalInvoice ? (
                     <button
                       type="button"
-                      onClick={() => void onCreatePayPalInvoice(inv)}
+                      disabled={creatingId === inv.id}
+                      onClick={async () => {
+                        setCreatingId(inv.id);
+                        try {
+                          await onCreatePayPalInvoice(inv);
+                        } finally {
+                          setCreatingId(null);
+                        }
+                      }}
                       aria-label={`Generate real PayPal Sandbox link for ${inv.invoiceNumber}`}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-rule-strong bg-rule px-3 py-2 text-xs font-semibold text-ink-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-focus"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-rule-strong bg-rule px-3 py-2 text-xs font-semibold text-ink-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-focus disabled:opacity-50"
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      PayPal Link
+                      {creatingId === inv.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      )}
+                      {creatingId === inv.id ? 'Connecting…' : 'PayPal Link'}
                     </button>
                   ) : null}
                   <button

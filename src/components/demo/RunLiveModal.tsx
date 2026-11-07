@@ -130,9 +130,25 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
         {/* Body */}
         <div className="p-6 space-y-6">
           {error && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800 flex items-start space-x-2">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-              <span>{error}</span>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800 space-y-2">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                <span className="font-medium">{error}</span>
+              </div>
+              {error.includes('403') || error.includes('NOT_AUTHORIZED') ? (
+                <div className="mt-1 rounded-lg bg-rose-100/70 p-2 text-[11px] text-rose-900 border border-rose-200">
+                  <strong>💡 How to enable:</strong> Log in to{' '}
+                  <a
+                    href="https://developer.paypal.com/dashboard/applications/sandbox"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-bold"
+                  >
+                    developer.paypal.com
+                  </a>{' '}
+                  &gt; Apps &amp; Credentials &gt; select your Sandbox App &gt; under App Settings, check <strong>&quot;Invoicing&quot;</strong> and save.
+                </div>
+              ) : null}
             </div>
           )}
 

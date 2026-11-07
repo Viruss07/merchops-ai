@@ -136,3 +136,14 @@ MerchOps AI supports PayPal negative testing headers (`PayPal-Mock-Response`) to
 - `{"mock_application_codes":"INSUFFICIENT_FUNDS"}`: UI displays actionable error message without debiting the ledger.
 - `{"mock_application_codes":"RECEIVER_UNREGISTERED"}`: Payout is held in `FAILED` state, cash reserve is released back to merchant balance.
 - Signature mismatch: Webhook endpoint rejects forged payloads with HTTP 400 without touching ledger entries.
+
+---
+
+## 6. Troubleshooting Common Sandbox Errors
+
+| Error | Root Cause | Resolution |
+|---|---|---|
+| `HTTP 403 NOT_AUTHORIZED` on Invoicing | The Sandbox REST App lacks the Invoicing scope (`https://uri.paypal.com/services/invoicing`). | 1. Go to [developer.paypal.com](https://developer.paypal.com/dashboard/applications/sandbox)<br>2. Select your Sandbox App<br>3. Under **App Settings** / **Features**, check **"Invoicing"**<br>4. Save changes (takes ~1 min for token scope update). |
+| `HTTP 401 Unauthorized` | Invalid `PAYPAL_CLIENT_ID` or `PAYPAL_CLIENT_SECRET`. | Verify credentials in `.env.local` against the Developer Dashboard. |
+| `INSUFFICIENT_FUNDS` on Payout | The sandbox merchant account balance is zero. | In Developer Dashboard &gt; Sandbox Accounts, edit your Business account and add funds ($5,000 USD). |
+

@@ -95,6 +95,11 @@ export default function DashboardPage() {
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
+  const [actionError, setActionError] = useState<{
+    title: string;
+    message: string;
+    hint?: string;
+  } | null>(null);
 
   const loadState = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -175,26 +180,52 @@ export default function DashboardPage() {
   );
 
   const handleCreatePayPalInvoice = useCallback(async (invoice: Invoice) => {
+    setActionError(null);
     try {
       const response = await createPayPalInvoice(invoice.id);
       setSnapshot(response.snapshot);
     } catch (error) {
-      if (error instanceof ApiError && error.snapshot) {
-        setSnapshot(error.snapshot);
+      if (error instanceof ApiError) {
+        if (error.snapshot) {
+          setSnapshot(error.snapshot);
+        }
+        setActionError({
+          title: 'PayPal Invoicing Notice',
+          message: error.message,
+          hint:
+            error.status === 403
+              ? 'Your PayPal Sandbox REST App lacks Invoicing permissions. To activate real Invoicing v2: open developer.paypal.com -> Apps & Credentials -> select your App -> check "Invoicing" under App Settings and save. In the meantime, use "Simulate Pay" to test collections.'
+              : undefined,
+        });
+        return;
       }
-      throw error;
+      setActionError({
+        title: 'Invoice Creation Failed',
+        message: getErrorMessage(error),
+      });
     }
   }, []);
 
   const handleSyncInvoices = useCallback(async () => {
+    setActionError(null);
     try {
       const response = await syncInvoices();
       setSnapshot(response.snapshot);
     } catch (error) {
-      if (error instanceof ApiError && error.snapshot) {
-        setSnapshot(error.snapshot);
+      if (error instanceof ApiError) {
+        if (error.snapshot) {
+          setSnapshot(error.snapshot);
+        }
+        setActionError({
+          title: 'Invoice Sync Notice',
+          message: error.message,
+        });
+        return;
       }
-      throw error;
+      setActionError({
+        title: 'Sync Failed',
+        message: getErrorMessage(error),
+      });
     }
   }, []);
 
@@ -325,6 +356,37 @@ export default function DashboardPage() {
                   onClick={() => setResetError(null)}
                   aria-label="Dismiss reset error"
                   className="rounded-sm p-1 text-blocked transition-colors hover:bg-blocked-field focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
+            {actionError && (
+              <div
+                role="alert"
+                className="mb-5 flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm"
+              >
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle
+                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <p className="font-semibold text-ink">{actionError.title}</p>
+                    <p className="mt-0.5 text-ink-2">{actionError.message}</p>
+                    {actionError.hint && (
+                      <p className="mt-2 rounded bg-amber-500/15 p-2 text-xs text-ink-2 border border-amber-500/20">
+                        <strong>💡 How to resolve:</strong> {actionError.hint}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActionError(null)}
+                  aria-label="Dismiss notice"
+                  className="rounded-sm p-1 text-ink-3 transition-colors hover:bg-rule focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 >
                   <X className="h-4 w-4" aria-hidden="true" />
                 </button>

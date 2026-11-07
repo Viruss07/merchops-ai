@@ -19,17 +19,29 @@ export class PayPalError extends Error {
   readonly code: PayPalErrorCode;
   readonly status?: number;
   readonly paypalName?: string;
+  readonly paypalMessage?: string;
+  readonly debugId?: string;
+  readonly details?: unknown;
 
   constructor(
     code: PayPalErrorCode,
     message: string,
-    details?: { status?: number; paypalName?: string }
+    details?: {
+      status?: number;
+      paypalName?: string;
+      paypalMessage?: string;
+      debugId?: string;
+      details?: unknown;
+    }
   ) {
     super(message);
     this.name = 'PayPalError';
     this.code = code;
     this.status = details?.status;
     this.paypalName = details?.paypalName;
+    this.paypalMessage = details?.paypalMessage;
+    this.debugId = details?.debugId;
+    this.details = details?.details;
   }
 }
 
@@ -564,16 +576,31 @@ export async function createDraftInvoice(
 
   if (!response.ok) {
     let paypalName: string | undefined;
+    let paypalMessage: string | undefined;
+    let paypalDebugId: string | undefined;
     try {
       const errBody = (await response.json()) as Record<string, unknown>;
       paypalName = typeof errBody.name === 'string' ? errBody.name : undefined;
+      paypalMessage = typeof errBody.message === 'string' ? errBody.message : undefined;
+      paypalDebugId = typeof errBody.debug_id === 'string' ? errBody.debug_id : undefined;
     } catch {
       paypalName = undefined;
     }
+
+    const message =
+      response.status === 403
+        ? 'PayPal Invoicing rejected with HTTP 403 (NOT_AUTHORIZED): The Sandbox REST App lacks Invoicing permissions. Enable "Invoicing" under App Settings in developer.paypal.com.'
+        : `PayPal Invoicing creation rejected with status HTTP ${response.status}${paypalName ? ` (${paypalName})` : ''}${paypalMessage ? `: ${paypalMessage}` : ''}.`;
+
     throw new PayPalError(
       'PAYPAL_API_REJECTED',
-      `PayPal Invoicing creation rejected with status HTTP ${response.status}.`,
-      { status: response.status, paypalName }
+      message,
+      {
+        status: response.status,
+        paypalName,
+        paypalMessage,
+        debugId: paypalDebugId || response.headers.get('paypal-debug-id') || undefined,
+      }
     );
   }
 
