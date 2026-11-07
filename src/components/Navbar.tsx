@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { ShieldCheck, ShieldAlert, RotateCcw, FlaskConical } from 'lucide-react';
+import Link from 'next/link';
+import { ShieldCheck, ShieldAlert, RotateCcw, FlaskConical, PlayCircle, Shield } from 'lucide-react';
 import { formatCentsToUSD } from '@/lib/money';
 import type { MerchantAccount, StateSnapshot } from '@/types';
 
@@ -35,8 +36,25 @@ export function Navbar({ account, capabilities, onReset, resetting }: NavbarProp
           </div>
         </div>
 
-        {/* Verified-by-evidence payout rail status */}
+        {/* Verified-by-evidence payout rail status & quick links */}
         <div className="hidden lg:flex items-center space-x-3 text-xs">
+          <Link
+            href="/demo"
+            className="flex items-center space-x-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-blue-700 border border-blue-200 font-semibold hover:bg-blue-100 transition shadow-xs"
+            title="Open Judge Mode with Interactive Demo Tour & Live Test Modal"
+          >
+            <PlayCircle className="h-3.5 w-3.5 text-blue-600" />
+            <span>Judge Mode (/demo)</span>
+          </Link>
+          <Link
+            href="/bench"
+            className="flex items-center space-x-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 border border-slate-200 font-semibold hover:bg-slate-200 transition"
+            title="Inspect Guardrail Bench with 12 Adversarial Traps"
+          >
+            <Shield className="h-3.5 w-3.5 text-slate-600" />
+            <span>Bench (12 Traps)</span>
+          </Link>
+
           {capabilities.payoutMode === 'SANDBOX_VERIFIED' && capabilities.verifiedBatchId ? (
             <div
               className="flex items-center space-x-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-700 border border-emerald-200 font-medium"

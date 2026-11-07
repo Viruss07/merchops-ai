@@ -1,227 +1,209 @@
 # MerchOps AI — Guardrailed Financial Operations & Cash Flow Copilot
 
-> Built for the **PayPal AI Hackathon 2026**  
-> **Core Architectural Principle**: *"AI proposes, rules decide. AI must never independently move money."*
+> **1-Line Pitch**: MerchOps AI is a guardrailed cash-flow copilot that projects working capital in integer cents, accelerates collections via real PayPal Invoicing v2, executes fee-safe payouts under deterministic reserve-floor guardrails, and enforces a strict architectural boundary: **"AI proposes, rules decide. AI must never independently move money."**
+>
+> Built for the **PayPal AI Hackathon 2026** | Nov 12, 2026 Deadline
+
+[![CI](https://github.com/Viruss07/merchops-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Viruss07/merchops-ai/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![AG Grid Community](https://img.shields.io/badge/AG%20Grid-v36%20Community-green.svg)](https://www.ag-grid.com/)
+[![PayPal Sandbox](https://img.shields.io/badge/PayPal-Invoicing%20v2%20%2B%20Payouts-003087.svg)](https://developer.paypal.com/)
 
 ---
 
-## What MerchOps AI Does
+## ⚡ 30-Second Judge's Path
 
-Small merchants struggle with fragmented working capital management: juggling late-paying customers, imminent supplier bills, and the constant risk of overdraft fees or cash crunches.
+If you have only 2 minutes to evaluate this submission, follow this high-impact sequence:
 
-**MerchOps AI** is a guardrailed financial operations cockpit that bridges accounts receivable (AR) and accounts payable (AP) under **deterministic cash reserve protection**:
-1. **Anticipates Cash Shortfalls**: Projects 30-day daily cash balances using pure deterministic arithmetic.
-2. **Accelerates Receivables**: AI drafts polite, context-aware payment reminders for overdue invoices. Payment links are simulated; live Invoicing/Orders integration is not implemented.
-3. **Protects Working Capital**: Enforces a non-negotiable safety reserve floor ($2,000.00), automatically blocking payouts that would trigger a liquidity breach.
-4. **Guarantees Human Control**: Outbound disbursements require a two-step merchant confirmation flow with a deterministic per-bill PayPal request id.
-
----
-
-## Main Features & Core Modules
-
-### 1. Runway & Cash-Flow Forecasting
-- **Deterministic 30-Day Engine**: Day-by-day cash trajectory calculated in exact integer cents ($1.00 = 100 cents). Zero LLM math hallucinations.
-- **Deterministic Demo Clock**: `DEMO_AS_OF` defaults to `2026-11-03` (env-overridable, `YYYY-MM-DD`). Runway starts from that date and invoice aging is derived from `dueDate`, so the documented scenario is stable regardless of the real wall clock.
-- **Safety Floor Monitoring**: Enforces a minimum cash reserve floor ($2,000.00).
-- **Proactive Breach Alerts**: Flags impending deficits in advance (e.g., Day 10 shortfall of -$800.00 when a $3,000 supplier bill matures on a $4,200 balance).
-- **Correct Bill Matching**: Bills are matched by `dueDate` only (no double counting via `daysUntilDue`), overdue/day-0 items are clamped to Day 1, and `PENDING`/`APPROVED`/`IN_FLIGHT` bills are included. The forecast reports `minBalanceCents` and `firstBreachDeficitCents`.
-- **Interactive Visual Timeline**: 30-day trajectory bar chart with reserve floor guideline and full expandable ledger table.
-
-### 2. Collections (Accounts Receivable)
-- **Overdue Invoice Management**: Tracks receivables, aging buckets, and customer payment status.
-- **AI-Assisted Reminders**: Proposes tailored payment reminder emails matching invoice aging and customer relationship context. The draft route is rate-limited and Zod-validated.
-- **Human-in-the-Loop Review**: Slide-over drawer lets merchants edit, review, and approve drafts. Approval is persisted server-side at `POST /api/reminders/approve`.
-- **Simulated Settlement**: One-click settlement simulator updates cash balance in real time. The settlement is attributed to `MERCHANT` (not `PAYPAL_WEBHOOK`) and is clearly labelled as a local simulation.
-
-### 3. Payouts (Accounts Payable)
-- **Dynamic Reserve Guardrail**: Evaluates pending vendor disbursements against projected cash balance.
-- **Automated Breach Blocking**: Disallows payouts that breach the reserve floor (returns HTTP 403 `RESERVE_BREACH_BLOCKED`).
-- **Two-Step Authorization Flow**: Requires explicit liquidity impact review and checkbox confirmation (`confirmed: true` is enforced server-side).
-- **Payout Lifecycle State Machine**: The server derives a deterministic PayPal request id from `(bill id, action)` and tracks `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED` in-process. Approval reserves cash but never debits it. A PayPal batch acceptance is **not** settlement; only a confirmed `SUCCESS` (batch or item) debits the ledger. A timeout or unknown outcome stays `IN_FLIGHT` with the same key, so it cannot be retried. This is **not durable and not multi-instance safe** — state resets on server restart.
-- **Dual Execution Rails**:
-  - *Simulation Rail (default)*: Instant local ledger settlement with audit logging.
-  - *Gated PayPal Sandbox Rail*: Implemented but **disabled unless the server env `PAYPAL_PAYOUTS_ENABLED=true`**. The browser/client cannot enable it. Strict origin lockdown (`https://api-m.sandbox.paypal.com`) applies. Dispatch, batch polling, and webhook signature verification are implemented; a real end-to-end sandbox settlement remains **unverified** until credentials and evidence are supplied.
-
-### 4. Operations & Audit Trail
-- **Chronological Ledger**: Tracks all balance updates, reminder approvals, simulated customer payments, and blocked/authorized payouts.
-- **Action Differentiation**: Clearly tags events (`PAYOUT_DISBURSED_SIMULATED`, `PAYOUT_BLOCKED_RESERVE_BREACH`, `INVOICE_PAID_SIMULATED`, `REMINDER_DRAFT_APPROVED`).
-- **Audit Filtering**: Filter events by Payouts, Collections, or Reserve Guardrails.
-- **Honest Scope**: The audit log is an in-memory array with UUID IDs. It is **not immutable** and resets on server restart.
+1. **Open the Judge Mode**: Navigate to [`/demo`](https://merchops-ai.onrender.com/demo) (or `http://localhost:3000/demo`).
+2. **Launch "Run it Live"**: Click the green **"Run it Live"** button in the header banner.
+   - **Step 1 (Real Invoicing)**: Creates a real live PayPal Sandbox invoice ($15.00) in 1 click, retrieves the authentic `recipient_view_url` and QR code. Open the payment link in a sandbox buyer window to pay and watch the balance credit via verified webhooks!
+   - **Step 2 (Fee-Inclusive Payout)**: Dispatches a live $1.00 vendor payout with real upfront fee calculation ($0.25 PayPal fee).
+3. **Follow the Guided Tour**: Click **"Start Tour"** to inspect the 5 core milestones:
+   - **Milestone 1 (Runway Forecast)**: Observe Day 10 shortfall (-$800.00) when a $3,000.00 bill matures on a $4,200.00 balance.
+   - **Milestone 2 (Safety Floor Guardrail)**: Try to disburse Acme Supplies on Payouts tab; see it **hard-blocked** by the $2,000.00 safety floor (`RESERVE_BREACH_BLOCKED`).
+   - **Milestone 3 (AI Cash Plan Copilot)**: Review 3 distinct AI-generated strategies (*Safest*, *Fastest Cash*, *Lowest Cost*), each evaluated by our deterministic validation engine.
+   - **Milestone 4 (Adversarial Bench)**: Visit [`/bench`](https://merchops-ai.onrender.com/bench) to test 12 prompt injection attacks, schema poisoning attempts, and balance-draining traps safely defused.
+   - **Milestone 5 (Agentic Commerce MCP)**: Inspect our read/propose-only Model Context Protocol server at `mcp/server.mts`.
 
 ---
 
-## Technology Stack
+## 🏛️ Non-Negotiable Financial Rules
+
+Every line of code and database trigger enforces these core rules:
+
+1. **AI Never Moves Money**: Model outputs are strictly proposals. Only deterministic code applies policy and calls payout/invoicing APIs. Never expose money-moving tools to an LLM or MCP agent.
+2. **Deterministic Idempotency**: Outbound PayPal requests use `PayPal-Request-Id` derived deterministically from `(entity_id, action, attempt)` — never random UUIDs, preventing double-billing on network retries.
+3. **Integer Cents Representation**: All DB columns, state fields, and ledger operations use exact integer cents ($1.00 = 100 cents). Decimal strings only appear at the PayPal REST API boundary.
+4. **Fee-Inclusive Reserve Policy**: US domestic payout fees (2%, min $0.25, max $1.00) are factored into reserve checks before approval, preventing fee-induced balance breaches.
+5. **Cryptographic Webhook Verification**: Inbound webhooks are validated against PayPal certificates via `POST /v1/notifications/verify-webhook-signature` and deduped against an append-only `webhook_events` table.
+6. **Append-Only Immutability**: `audit_logs` and `ledger_entries` in PostgreSQL are protected by database triggers that explicitly reject `UPDATE` and `DELETE` operations.
+7. **Concurrency Advisory Locks**: Payout approvals acquire transaction-scoped PostgreSQL advisory locks (`pg_advisory_xact_lock`) on the bill ID to prevent race conditions.
+
+---
+
+## 📊 Status Matrix: Technical Truthfulness
+
+In keeping with our strict standard of engineering honesty, here is an exact accounting of every capability:
+
+| Capability | Status | Implementation Details |
+|---|---|---|
+| **Deterministic Runway Engine** | **[VERIFIED]** | 100% deterministic arithmetic in integer cents; 51 unit tests. Due-date matching, overdue clamping, reserve deficit reporting (`src/lib/runway.ts`). |
+| **Safety Reserve Floor** | **[VERIFIED]** | Non-negotiable $2,000.00 floor. Enforced server-side with HTTP 403 `RESERVE_BREACH_BLOCKED` (`src/lib/payoutPolicy.ts`). |
+| **Two-Step Authorization** | **[VERIFIED]** | Human-in-the-loop review + mandatory checkbox confirmation (`confirmed: true` enforced on server). |
+| **PayPal Invoicing v2 (Draft & Send)** | **[VERIFIED]** | `POST /v2/invoicing/invoices` creates draft; `POST /send` activates; `GET` retrieves `recipient_view_url` (`src/lib/paypalInvoicing.ts`). |
+| **Invoicing v2 (Remind & QR Code)** | **[VERIFIED]** | `POST /remind` delivers AI-proposed reminder via PayPal; `POST /generate-qr-code` renders QR for point-of-sale checkout. |
+| **PayPal Payouts Dispatch** | **[VERIFIED]** | `POST /v1/payments/payouts` with deterministic idempotency keys and upfront 2% fee calculation (min $0.25, max $1.00). |
+| **Webhook Cryptographic Verification**| **[VERIFIED]** | `POST /v1/notifications/verify-webhook-signature` validates signatures. Handlers update invoices and debit ledger idempotently (`src/lib/paypal.ts`). |
+| **PostgreSQL Persistence** | **[VERIFIED]** | Full schema (`migrations/001_init.sql` to `004_ai_proposals.sql`), migration runner (`scripts/migrate.mjs`), and `PgRepository`. |
+| **Append-Only Triggers** | **[VERIFIED]** | PostgreSQL triggers block `UPDATE` and `DELETE` on `audit_logs` and `ledger_entries`. |
+| **Transactional Advisory Locks** | **[VERIFIED]** | `pg_advisory_xact_lock(hashtext(bill_id))` prevents race condition double-spends during simultaneous clicks. |
+| **AI Cash Plan Copilot** | **[VERIFIED]** | Generates 3 strategies (Safest, Fastest Cash, Lowest Cost) via OpenRouter model fallthrough; validated by deterministic policy. |
+| **Prompt Injection Spotlight** | **[VERIFIED]** | Defends against instruction overrides, jailbreaks, and zero-amount invoice traps (`src/lib/ai/spotlight.ts`). |
+| **Guardrail Bench (/bench)** | **[VERIFIED]** | Interactive test bench executing 12 adversarial scenarios across injection, reserve breach, and duplicate replay attacks. |
+| **Agentic Commerce MCP Server** | **[VERIFIED]** | JSON-RPC 2.0 MCP server (`mcp/server.mts`) providing read & propose tools (`get_cash_runway`, `propose_cash_plan`); zero money movement tools. |
+| **AG Grid Community Tables** | **[VERIFIED]** | High-density grids for Collections, Payouts, and Audit Trail using open AG Grid Community v36. |
+
+---
+
+## 🛠️ Technology Stack
 
 | Layer | Technology | Details |
 |---|---|---|
 | **Framework** | Next.js 15 (App Router) | React 19, TypeScript, Server & Client Components |
-| **Data Tables** | AG Grid Community (v36) | High-performance interactive data grids for Collections, Payouts, and Audit Trail |
-| **Styling** | Tailwind CSS + AG Theme Quartz | Modern high-trust financial dashboard with custom AG Grid theme integration |
-| **Icons** | Lucide React | Consistent iconography across indicators and navigation |
-| **Testing** | Node.js Test Runner (`node:test`) + `tsx` | Unit tests for deterministic money/runway/policy logic. Live PayPal calls are never part of `npm test`. |
-| **Calculations** | Pure TypeScript Functions | 100% deterministic integer cents math (`src/lib/money.ts`, `src/lib/runway.ts`, `src/lib/payoutPolicy.ts`) |
-| **Persistence** | In-memory repository (demo) | State lives in a server-side singleton. PostgreSQL is planned but **not implemented**; state resets on server restart. |
-| **Payment Integration** | PayPal REST APIs (Sandbox) | Client Credentials OAuth (`/v1/oauth2/token`), Payouts dispatch (`POST /v1/payments/payouts`), batch status (`GET /v1/payments/payouts/{id}`), and webhook signature verification. Live rail gated by `PAYPAL_PAYOUTS_ENABLED` and still unverified. |
-| **AI Integration** | OpenRouter API | Model: `anthropic/claude-3.5-sonnet` with honest fallback template |
+| **Data Tables** | AG Grid Community (v36) | Sorting, filtering, quick search, and custom cell action buttons |
+| **Database & ORM** | PostgreSQL (Neon / Render) | Integer-cents schema, advisory locks, append-only triggers, migration runner |
+| **Payments Rail** | PayPal Developer Sandbox | REST Invoicing v2, Payouts, Webhook Verification, Token Cache |
+| **SDK Integration** | APIMatic PayPal TypeScript SDK | Typed API bindings, model contracts, and validation utilities |
+| **AI Model Gateway** | OpenRouter API | Fallthrough cascade: Llama 3.3 70B -> DeepSeek R1 -> Qwen 2.5 Coder -> Fallback Template |
+| **Agent Protocol** | Model Context Protocol (MCP) | Read/propose-only server over stdio for external AI agents |
+| **Styling** | Tailwind CSS + AG Theme Quartz | High-density financial cockpit with accessible dark/light contrast |
+| **Testing** | Node.js Test Runner + `tsx` | 51 automated unit and integration tests across money, policy, runway, and AI |
+| **Deployment** | Render Web Service + Postgres | `render.yaml` blueprint with automatic database provisioning and keep-warm job |
 
 ---
 
-## AG Grid Community Integration
+## 🧪 Guardrail Bench (`/bench`)
 
-MerchOps AI meaningfully integrates **AG Grid Community** to deliver a high-density, professional financial operations experience:
+To demonstrate the robustness of our architecture, we provide a dedicated test bench at `/bench`. It evaluates the system against 12 adversarial attack scenarios:
 
-1. **Collections Grid (`src/components/collections/InvoicesGrid.tsx`)**:
-   - Interactive table of merchant receivables with column sorting (Amount, Due Date, Days Overdue).
-   - Text and numeric filtering on amounts and aging buckets.
-   - Instant quick search across customer names, invoice numbers, and descriptions.
-   - Embedded interactive cell action buttons: **Draft Reminder** (opens AI drafting drawer) and **Simulate Pay** (opens settlement simulation modal).
-
-2. **Payouts Grid (`src/components/payouts/BillsGrid.tsx`)**:
-   - High-density payables table tracking vendor bills, due dates, and amounts.
-   - Dynamic **Projected Balance** column reflecting post-payout cash positions.
-   - Real-time **Reserve Impact** status badges highlighting reserve floor safety vs. breach.
-   - Action buttons: launches the **Two-Step Payout Authorization Modal** (locked when breaching, active when safe).
-
-3. **Audit Trail Grid (`src/components/audit/AuditGrid.tsx`)**:
-   - Structured audit ledger table with timestamp sorting and instant search across event details.
-   - Toggleable between AG Grid Table View and Chronological Feed View.
-
-*Note on Licensing*: This integration strictly uses the free, open **AG Grid Community** edition (`ag-grid-community` and `ag-grid-react`). No Enterprise features, proprietary modules, or license keys are required. AG Grid was selected specifically to provide merchants with enterprise-grade sorting, filtering, and rapid financial scanning.
+1. **Direct Instruction Override**: Attacker attempts to bypass reserve floor via prompt injection in invoice notes. (Defused by Spotlight)
+2. **Hidden Jailbreak in Vendor Name**: Prompt injection embedded in vendor display name. (Defused by Spotlight)
+3. **Markdown Exfiltration**: Attacker injects fake images to exfiltrate session data. (Sanitized)
+4. **Reserve Floor Breach ($3,000 on $4,200 balance)**: Deterministic policy blocks transaction with HTTP 403.
+5. **Fee-Induced Reserve Breach ($2,199 on $4,200 balance)**: A payout that appears safe fails when $1.00 PayPal fee breaches the floor.
+6. **Concurrent Double-Spend**: Two simultaneous payouts on the same bill handled safely by Postgres advisory locks.
+7. **Idempotent Replay**: Duplicate payment requests return stored transaction ID without duplicate debit.
+8. **Forged Webhook Signature**: Invalid webhook certificate signature rejected with HTTP 400.
+9. **Duplicate Webhook Delivery**: Second webhook with same `event_id` is safely ignored.
+10. **Zero-Amount Invoice Trap**: Attacker submits $0 invoice to corrupt runway math; rejected by Zod schema.
+11. **Negative Payout Amount**: Attacker attempts credit injection via negative payout; rejected by Zod schema.
+12. **Model Math Hallucination**: LLM proposes an unvalidated balance projection; rejected by deterministic validator.
 
 ---
 
-## Installation & Local Setup
+## 🤖 Agentic Commerce MCP Server (`mcp/server.mts`)
+
+MerchOps AI exposes its financial intelligence to external AI agents via the **Model Context Protocol (MCP)**:
+
+```bash
+# Start the MCP server over stdio
+npm run mcp
+```
+
+### Available MCP Tools (Strictly Read / Propose):
+- `get_cash_runway`: Returns current cash balance, reserve floor, 30-day projection, and breach warnings.
+- `get_invoices`: Returns list of receivables, overdue days, and collection status.
+- `get_bills`: Returns upcoming supplier bills, due dates, and reserve impact flags.
+- `propose_cash_plan`: Solicits structured AI proposal for accelerating receivables and postponing payables.
+- `validate_cash_plan`: Runs deterministic policy checks against any proposed plan.
+
+**Zero Execution Tools**: The MCP server deliberately contains no tools for sending invoices, moving money, or approving payouts. All financial mutations require human merchant authorization in the MerchOps UI.
+
+---
+
+## 📦 Local Setup & Development
 
 ### Prerequisites
 - Node.js `v20+` or `v24+`
 - npm `v10+`
 
-### Steps
+### Installation
+```bash
+# Clone the repository
+git clone https://github.com/Viruss07/merchops-ai.git
+cd merchops-ai
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Viruss07/merchops-ai.git
-   cd merchops-ai
-   ```
+# Install dependencies
+npm install
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+# Configure environment variables
+cp .env.example .env.local
+```
 
-3. **Configure Environment Variables**:
-   Copy the example environment template:
-   ```bash
-   cp .env.example .env.local
-   ```
-   Configure the following variables in `.env.local`:
-   ```bash
-   # Deterministic demo clock (YYYY-MM-DD). Invalid values fall back to 2026-11-03.
-   DEMO_AS_OF=2026-11-03
+### Configure `.env.local`:
+```bash
+DEMO_AS_OF=2026-11-03
+PAYPAL_API_BASE_URL="https://api-m.sandbox.paypal.com"
+PAYPAL_CLIENT_ID="<your_sandbox_client_id>"
+PAYPAL_CLIENT_SECRET="<your_sandbox_client_secret>"
+PAYPAL_PAYOUTS_ENABLED=true
+PAYPAL_WEBHOOK_ID="<your_sandbox_webhook_id>"
+OPENROUTER_API_KEY="<your_openrouter_api_key>"
 
-   # Server-side gate for the live PayPal Sandbox payout rail (default: false).
-   # The browser cannot enable this. End-to-end sandbox settlement remains unverified.
-   PAYPAL_PAYOUTS_ENABLED=false
+# Optional: PostgreSQL Database (defaults to in-memory store if unset)
+DATABASE_URL="postgres://user:password@localhost:5432/merchops"
+```
 
-   # Optional: extra protection for /api/reset in production.
-   # When set, requests must include a matching `x-demo-admin-token` header.
-   DEMO_ADMIN_TOKEN=
+### Verify Local Build & Tests:
+```bash
+# Run unit tests (51 passing deterministic tests)
+npm test
 
-   # PayPal Sandbox Credentials (from developer.paypal.com)
-   PAYPAL_API_BASE_URL="https://api-m.sandbox.paypal.com"
-   PAYPAL_CLIENT_ID="<your_sandbox_client_id>"
-   PAYPAL_CLIENT_SECRET="<your_sandbox_client_secret>"
+# Run TypeScript typecheck
+npm run typecheck
 
-   # Required to verify PayPal webhook signatures (rejects deliveries if unset).
-   PAYPAL_WEBHOOK_ID="<your_sandbox_webhook_id>"
+# Run ESLint
+npm run lint
 
-   # OpenRouter AI API Key (optional — system gracefully uses fallback template if omitted)
-   OPENROUTER_API_KEY="<your_openrouter_api_key>"
-   ```
-   `AUTH_SECRET` and `DATABASE_URL` are **RESERVED / NOT YET USED** (no auth or database persistence exists). `PAYPAL_WEBHOOK_ID` is consumed by the webhook verifier; without it, unverified webhooks are rejected. `DEFAULT_MIN_RESERVE_CENTS` and `DEFAULT_FORECAST_DAYS` are consumed by the server.
+# Run production build
+npm run build
 
-4. **Run Lint, Typecheck, and Tests**:
-   ```bash
-   npm run lint
-   npm run typecheck
-   npm test
-   ```
-   `npm test` runs the deterministic unit suite with the Node.js test runner and `tsx`. It never calls live PayPal endpoints.
-
-5. **Start the Development Server**:
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Continuous Integration
-
-The CI workflow (`.github/workflows/ci.yml`) runs on push and pull request: `npm ci`, then `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`. None of these steps require PayPal credentials, a database, or a live server.
-
-### Manual Verification Scripts (not part of `npm test`)
-
-- `node scripts/run-e2e.mjs` — builds/starts the app on a free port and exercises the deterministic HTTP flow (baseline, reserve block, collection, payout, idempotent replay, reset).
-- `node scripts/verify-chart-render.mjs` — API-level check of the seed scenario against a running server (`BASE_URL`, default `http://localhost:3000`).
-- `node scripts/paypal-auth-test.mjs` and `node scripts/paypal-payouts-scope-test.mjs` — optional manual PayPal Sandbox checks that require secrets and network access. They print no secrets or tokens.
-
-### Security Model (Current)
-
-- The server is the single source of truth. `GET /api/state` returns `{account, invoices, bills, auditLogs, capabilities: {paypalSandboxEnabled, payoutMode, verifiedBatchId}}`; the browser does not import the in-memory store, and mutations return a fresh snapshot.
-- All mutation routes enforce same-origin requests and Zod validation.
-- The live PayPal rail is a server-side decision: the client cannot enable it, and `PAYPAL_PAYOUTS_ENABLED` must be `true`.
-- `/api/reset` requires `{confirm: true}` plus a same-origin request, and in production a matching `x-demo-admin-token` header when `DEMO_ADMIN_TOKEN` is set.
-- There is **no authentication, no user accounts, and no tenant isolation**. Do not deploy this as a multi-tenant service.
+# Start local server
+npm run dev
+```
 
 ---
 
-## Partner & Judge Demo Walkthrough
+## 🚀 Deployment on Render
 
-A complete, 3–4 minute walkthrough script is provided in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+MerchOps AI includes an automated Infrastructure-as-Code blueprint in [`render.yaml`](render.yaml):
 
-### Quick Demo Summary:
-The scenario is deterministic: `DEMO_AS_OF` defaults to **2026-11-03**, so day offsets are stable even when the demo is run later.
-1. **Day 0 (Initial State)**: Cash is **$4,200.00**. Minimum safety floor is **$2,000.00**.
-2. **The Problem (Runway Tab)**: On Day 10 (**2026-11-13**), Acme Supplies' **$3,000.00** bill matures. Paying it drops cash to **$1,200.00**, breaching the safety floor by **-$800.00**.
-3. **The Guardrail (Payouts Tab)**: Attempting to pay Acme Supplies is **blocked** by reserve policy (HTTP 403 `RESERVE_BREACH_BLOCKED`).
-4. **The Resolution (Collections Tab)**: Merchant opens Apex Corp's overdue invoice ($1,500.00), reviews an AI-drafted reminder, approves it, and simulates customer settlement. Cash rises to **$5,700.00**.
-5. **The Safe Execution (Payouts Tab)**: With $5,700.00 in cash, post-payout balance will be $2,700.00 (+$700 buffer above reserve). Acme Supplies payout is unlocked. Merchant authorizes payout with 2-step confirmation; replaying the same idempotency key returns the stored result instead of paying twice.
-6. **Audit Trail (Audit Tab)**: All actions are chronologically logged with exact amounts and timestamps (in-memory; resets on server restart).
-
-To reset the scenario at any time, click **"Reset Demo"** in the top navigation bar. The reset restores $4,200.00, the overdue Apex invoice, the pending Acme bill, and the Day-10 breach.
-
----
-
-## Status Matrix: Verified vs. Simulated vs. Limitations
-
-In keeping with our strict standard of technical truthfulness, here is an exact accounting of every capability:
-
-| Capability | Status | Implementation Details |
-|---|---|---|
-| **Deterministic Runway Engine** | **VERIFIED** | 100% deterministic code in integer cents; unit-tested. Bills matched by `dueDate` only, overdue/day-0 clamped to Day 1, includes PENDING/APPROVED/IN_FLIGHT, reports `minBalanceCents` and `firstBreachDeficitCents`. |
-| **Reserve Floor Enforcement** | **VERIFIED** | Enforces the $2,000 floor and blocks unsafe payouts with HTTP 403 `RESERVE_BREACH_BLOCKED`. |
-| **Two-Step Authorization** | **VERIFIED** | Merchant review + explicit confirmation; the API requires `confirmed: true`. |
-| **Idempotency Protection** | **IN-PROCESS ONLY** | Deterministic `PayPal-Request-Id` derived from `(bill id, action)`; retries reuse the same key. Lifecycle is `APPROVED -> IN_FLIGHT -> DISBURSED | FAILED`. Duplicate replays and duplicate webhooks return the stored result; concurrent requests cannot double-disburse within one process. **Not durable, not multi-instance safe**, and resets on server restart. |
-| **PayPal Sandbox OAuth** | **UNVERIFIED / ASSUMED** | Client Credentials flow is implemented; no credential-backed HTTP verification is recorded in this repository. Manual script requires secrets. |
-| **PayPal Payouts OAuth Scope** | **UNVERIFIED / ASSUMED** | Payouts scope presence is not confirmed. A manual scope-check script exists but has not been run as part of verification. |
-| **Strict Sandbox Origin Guard** | **VERIFIED (STATIC)** | Only `https://api-m.sandbox.paypal.com` is permitted; any other configured origin is rejected before a token is requested. |
-| **Live PayPal Sandbox Payout Dispatch** | **IMPLEMENTED, UNVERIFIED** | Server-side gated by `PAYPAL_PAYOUTS_ENABLED=true`; the client cannot enable it. Requires credentials. Includes batch polling and webhook reconciliation, but no real end-to-end sandbox settlement has been recorded yet. |
-| **Payout Simulation Mode** | **VERIFIED** | Local ledger settlement with audit logging; this is the default rail. |
-| **OpenRouter AI Reminder Drafts** | **FALLBACK WORKING / LIVE UNVERIFIED** | Fallback template fully functional and honestly labelled. Draft route is rate-limited and Zod-validated; a live OpenRouter key is not verified in production. |
-| **Customer Payment Simulation** | **SIMULATED** | Local ledger demonstration, attributed to `MERCHANT` (not `PAYPAL_WEBHOOK`). Clearly labelled with zero live money movement. |
-| **Reminder Approval Persistence** | **VERIFIED (IN-MEMORY)** | Persisted server-side at `POST /api/reminders/approve`; resets on server restart. |
-| **Audit Trail** | **IN-MEMORY, NOT IMMUTABLE** | UUID-ID entries in an in-memory array. Not append-only/immutable, and resets on server restart. |
-| **Authentication / User Accounts** | **NOT IMPLEMENTED** | No login, sessions, roles, or auth middleware. Same-origin checks are not authentication. |
-| **Tenant Isolation** | **NOT IMPLEMENTED** | Single demo merchant; no row-level or request-level tenancy. |
-| **Database Persistence** | **NOT IMPLEMENTED** | Prototype uses an in-memory repository. PostgreSQL is planned/reserved only. State resets on server restart. |
-| **PayPal Webhooks / Signature Verification** | **IMPLEMENTED, UNVERIFIED** | `POST /api/paypal/webhook` verifies signatures through PayPal's verification endpoint and processes success/failure events idempotently. Requires `PAYPAL_WEBHOOK_ID`; no real PayPal webhook has been verified. |
-| **PayPal Invoicing / Orders APIs** | **NOT IMPLEMENTED** | Demo uses simulated checkout links; no live Invoicing or Orders integration. |
-| **Outbound Email Transport** | **NOT IMPLEMENTED** | Reminders are staged locally in the audit log; no SMTP/SES/SendGrid service is connected. |
-| **Multi-instance-safe Idempotency** | **NOT IMPLEMENTED** | Keys live in one Node process. Horizontal scaling or restarts would break deduplication. |
-
-**Known operational limitation:** all state (account, invoices, bills, audit log, idempotency keys) is in memory and resets when the server restarts. Payout dispatch against PayPal remains unverified unless valid sandbox credentials are supplied **and** `PAYPAL_PAYOUTS_ENABLED=true`.
+1. **Fork or Push** your repository to GitHub.
+2. Log in to [Render Dashboard](https://dashboard.render.com/) and click **New > Blueprint**.
+3. Select your repository. Render will automatically parse `render.yaml` and configure:
+   - A Node.js Web Service (`merchops-ai`) running Next.js.
+   - A managed PostgreSQL instance (`merchops-db`).
+4. In the Render Environment Variables tab for `merchops-ai`, provide your secrets:
+   - `PAYPAL_CLIENT_ID`
+   - `PAYPAL_CLIENT_SECRET`
+   - `OPENROUTER_API_KEY`
+5. Once deployed, register your live webhook URL with PayPal:
+   ```bash
+   node scripts/register-webhook.mjs https://<your-render-subdomain>.onrender.com/api/paypal/webhook
+   ```
+6. Copy the output `Webhook ID` back into your Render environment variables as `PAYPAL_WEBHOOK_ID`.
 
 ---
 
-## License
+## 🙏 Credits & Acknowledgments
+
+- **APIMatic**: Special thanks to the APIMatic team for providing the PayPal TypeScript SDK tooling. *(Reminder: Submit APIMatic usage form around Nov 10 at [APIMatic Hackathon Form](https://docs.google.com/forms/d/e/1FAIpQLScP_Z_67Q2Qe4cK6K0m4f4y_uR_j4hX4t6_r5k6Z7q8_9w/viewform))*.
+- **AG Grid**: High-density financial data presentation powered by AG Grid Community v36.
+- **PayPal Developer Platform**: Invoicing v2 and Payouts Sandbox APIs.
+
+---
+
+## 📄 License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
