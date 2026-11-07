@@ -60,15 +60,31 @@ async function main() {
   let token = '';
   let scopes = [];
   try {
-    const res = await fetch(`${REQUIRED_SANDBOX_URL}/v1/oauth2/token`, {
+    const requestedScopes = [
+      'https://uri.paypal.com/services/invoicing',
+      'https://uri.paypal.com/payments/payouts',
+    ].join(' ');
+
+    let res = await fetch(`${REQUIRED_SANDBOX_URL}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
         Authorization: authHeader,
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
       },
-      body: 'grant_type=client_credentials',
+      body: `grant_type=client_credentials&scope=${encodeURIComponent(requestedScopes)}`,
     });
+    if (!res.ok) {
+      res = await fetch(`${REQUIRED_SANDBOX_URL}/v1/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: 'grant_type=client_credentials',
+      });
+    }
     if (!res.ok) {
       console.error(`[FAIL] OAuth request rejected: HTTP ${res.status}`);
       process.exit(1);

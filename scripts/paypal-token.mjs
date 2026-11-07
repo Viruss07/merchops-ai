@@ -61,15 +61,33 @@ async function main() {
 
   try {
     const start = Date.now();
-    const res = await fetch(`${REQUIRED_SANDBOX_URL}/v1/oauth2/token`, {
+    const requestedScopes = [
+      'https://uri.paypal.com/services/invoicing',
+      'https://uri.paypal.com/payments/payouts',
+    ].join(' ');
+
+    let res = await fetch(`${REQUIRED_SANDBOX_URL}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
         Authorization: authHeader,
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
       },
-      body: 'grant_type=client_credentials',
+      body: `grant_type=client_credentials&scope=${encodeURIComponent(requestedScopes)}`,
     });
+
+    // If explicit scope request fails for any reason, fallback to default grant
+    if (!res.ok) {
+      res = await fetch(`${REQUIRED_SANDBOX_URL}/v1/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: 'grant_type=client_credentials',
+      });
+    }
     const elapsed = Date.now() - start;
 
     if (!res.ok) {
@@ -84,6 +102,8 @@ async function main() {
     }
 
     console.log(`[PASS] OAuth Token granted successfully (${elapsed}ms)`);
+    console.log(`[INFO] App ID: ${data.app_id || 'N/A'}`);
+    console.log(`[INFO] Client ID in .env.local: ${clientId.slice(0, 8)}...${clientId.slice(-4)}`);
     console.log(`[INFO] Token Type: ${data.token_type}`);
     console.log(`[INFO] Expires In: ${data.expires_in}s`);
 

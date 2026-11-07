@@ -52,6 +52,10 @@ interface CachedToken {
 
 let cachedToken: CachedToken | null = null;
 
+export function clearPayPalTokenCache(): void {
+  cachedToken = null;
+}
+
 function getPermittedBaseUrl(): string {
   const configured =
     process.env.PAYPAL_API_BASE_URL?.trim() || PERMITTED_SANDBOX_ORIGIN;
@@ -100,9 +104,10 @@ function getCredentials(): { clientId: string; clientSecret: string } {
   return { clientId, clientSecret };
 }
 
-export async function getPayPalAccessToken(): Promise<string> {
+export async function getPayPalAccessToken(forceRefresh = false): Promise<string> {
   const now = Date.now();
   if (
+    !forceRefresh &&
     cachedToken !== null &&
     cachedToken.expiresAt - TOKEN_SAFETY_MARGIN_MS > now
   ) {
@@ -112,21 +117,42 @@ export async function getPayPalAccessToken(): Promise<string> {
   const baseUrl = getPermittedBaseUrl();
   const { clientId, clientSecret } = getCredentials();
 
+  const authHeader =
+    'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  const requestedScopes = [
+    'https://uri.paypal.com/services/invoicing',
+    'https://uri.paypal.com/payments/payouts',
+  ].join(' ');
+
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
-        Authorization:
-          'Basic ' +
-          Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
+        Authorization: authHeader,
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
       },
-      body: 'grant_type=client_credentials',
+      body: `grant_type=client_credentials&scope=${encodeURIComponent(requestedScopes)}`,
       signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
       cache: 'no-store',
     });
+
+    // Fallback to unadorned client_credentials if PayPal rejects explicit scope request
+    if (!response.ok) {
+      response = await fetch(`${baseUrl}/v1/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: 'grant_type=client_credentials',
+        signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      });
+    }
   } catch {
     throw new PayPalError(
       'PAYPAL_AUTH_FAILED',
@@ -567,6 +593,26 @@ export async function createDraftInvoice(
       signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
       cache: 'no-store',
     });
+
+    // If 401/403, clear cached token and retry with a freshly requested scoped token
+    if (response.status === 401 || response.status === 403) {
+      clearPayPalTokenCache();
+      const freshToken = await getPayPalAccessToken(true);
+      if (freshToken && freshToken !== accessToken) {
+        response = await fetch(`${baseUrl}/v2/invoicing/invoices`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${freshToken}`,
+            'Content-Type': 'application/json',
+            'PayPal-Request-Id': requestId,
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+          cache: 'no-store',
+        });
+      }
+    }
   } catch {
     throw new PayPalError(
       'PAYPAL_OUTCOME_UNKNOWN',
