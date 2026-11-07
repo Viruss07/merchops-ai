@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: merchops-ai
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm run db:migrate && npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: merchops-db
+          property: connectionString
+      - key: PAYPAL_API_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: PAYPAL_PAYOUTS_ENABLED
+        value: "true"
+      - key: DEMO_AS_OF
+        value: "2026-11-03"
+      - key: DEFAULT_MIN_RESERVE_CENTS
+        value: "200000"
+      - key: DEFAULT_FORECAST_DAYS
+        value: "30"
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: meta-llama/llama-3.3-70b-instruct:free
+
+databases:
+  - name: merchops-db
+    plan: free
+    region: oregon
+
