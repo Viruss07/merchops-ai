@@ -20,18 +20,24 @@ import {
   Clock,
   Calendar,
   Search,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 
 interface InvoicesGridProps {
   invoices: Invoice[];
   onOpenDraft: (invoice: Invoice) => void;
   onOpenPaymentModal: (invoice: Invoice) => void;
+  onCreatePayPalInvoice?: (invoice: Invoice) => Promise<void>;
+  onSyncInvoices?: () => Promise<void>;
 }
 
 export function InvoicesGrid({
   invoices,
   onOpenDraft,
   onOpenPaymentModal,
+  onCreatePayPalInvoice,
+  onSyncInvoices,
 }: InvoicesGridProps) {
   const [quickFilterText, setQuickFilterText] = useState('');
 
@@ -240,27 +246,50 @@ export function InvoicesGrid({
                 type="button"
                 onClick={() => onOpenDraft(inv)}
                 aria-label={`Draft AI collection reminder for ${inv.customerName}`}
-                className="inline-flex items-center space-x-1 rounded-lg border border-indigo-300 bg-indigo-50/90 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="inline-flex items-center space-x-1 rounded-lg border border-indigo-300 bg-indigo-50/90 px-2 py-1 text-xs font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <Sparkles className="h-3 w-3 text-indigo-600 shrink-0" />
-                <span>Draft Reminder</span>
+                <span>Remind</span>
               </button>
+
+              {inv.recipientViewUrl ? (
+                <a
+                  href={inv.recipientViewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Pay invoice ${inv.invoiceNumber} on PayPal Sandbox`}
+                  className="inline-flex items-center space-x-1 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                  <span>Pay on PayPal</span>
+                </a>
+              ) : onCreatePayPalInvoice ? (
+                <button
+                  type="button"
+                  onClick={() => void onCreatePayPalInvoice(inv)}
+                  aria-label={`Generate real PayPal Sandbox link for ${inv.invoiceNumber}`}
+                  className="inline-flex items-center space-x-1 rounded-lg border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <ExternalLink className="h-3 w-3 text-blue-600 shrink-0" />
+                  <span>PayPal Link</span>
+                </button>
+              ) : null}
 
               <button
                 type="button"
                 onClick={() => onOpenPaymentModal(inv)}
-                aria-label={`Simulate PayPal payment from ${inv.customerName}`}
-                className="inline-flex items-center space-x-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                aria-label={`Simulate offline payment from ${inv.customerName}`}
+                className="inline-flex items-center space-x-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-slate-400"
               >
-                <CreditCard className="h-3 w-3 shrink-0" />
-                <span>Simulate Pay</span>
+                <CreditCard className="h-3 w-3 text-slate-500 shrink-0" />
+                <span>Simulate</span>
               </button>
             </div>
           );
         },
       },
     ],
-    [onOpenDraft, onOpenPaymentModal],
+    [onOpenDraft, onOpenPaymentModal, onCreatePayPalInvoice],
   );
 
   const defaultColDef = useMemo<ColDef<Invoice>>(
@@ -282,17 +311,31 @@ export function InvoicesGrid({
           </span>
         </div>
 
-        {/* Quick Filter Search Input */}
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
-          <input
-            type="text"
-            value={quickFilterText}
-            onChange={(e) => setQuickFilterText(e.target.value)}
-            aria-label="Search invoices by number, customer, description, status, or dollar amount"
-            placeholder="Search invoices, customers..."
-            className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
-          />
+        {/* Quick Filter Search Input & Sync */}
+        <div className="flex items-center space-x-2 w-full sm:w-auto">
+          {onSyncInvoices && (
+            <button
+              type="button"
+              onClick={() => void onSyncInvoices()}
+              aria-label="Reconcile and sync invoice status with PayPal Sandbox"
+              className="inline-flex items-center space-x-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition active:scale-95 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+              <span>Sync with PayPal</span>
+            </button>
+          )}
+
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={quickFilterText}
+              onChange={(e) => setQuickFilterText(e.target.value)}
+              aria-label="Search invoices by number, customer, description, status, or dollar amount"
+              placeholder="Search invoices, customers..."
+              className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+            />
+          </div>
         </div>
       </div>
 

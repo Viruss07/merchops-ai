@@ -31,14 +31,55 @@ function extractBatchId(event: unknown): string | null {
   return null;
 }
 
-function classifyEvent(eventType: string): 'SUCCESS' | 'FAILED' | 'IGNORE' {
+function extractInvoiceIdentifier(event: unknown): {
+  paypalInvoiceId: string | null;
+  invoiceNumber: string | null;
+} {
+  if (typeof event !== 'object' || event === null) {
+    return { paypalInvoiceId: null, invoiceNumber: null };
+  }
+  const root = event as Record<string, unknown>;
+  const resource =
+    typeof root.resource === 'object' && root.resource !== null
+      ? (root.resource as Record<string, unknown>)
+      : null;
+  if (!resource) return { paypalInvoiceId: null, invoiceNumber: null };
+
+  const invoiceObj =
+    typeof resource.invoice === 'object' && resource.invoice !== null
+      ? (resource.invoice as Record<string, unknown>)
+      : resource;
+
+  const paypalInvoiceId = readString(invoiceObj, 'id');
+  const detail =
+    typeof invoiceObj.detail === 'object' && invoiceObj.detail !== null
+      ? (invoiceObj.detail as Record<string, unknown>)
+      : null;
+
+  const invoiceNumber = detail
+    ? readString(detail, 'invoice_number')
+    : readString(resource, 'invoice_id') ?? readString(resource, 'custom_id');
+
+  return { paypalInvoiceId, invoiceNumber };
+}
+
+function classifyEvent(
+  eventType: string
+): 'PAYOUT_SUCCESS' | 'PAYOUT_FAILED' | 'INVOICE_PAID' | 'IGNORE' {
   const upper = eventType.toUpperCase();
+
+  if (
+    upper === 'INVOICING.INVOICE.PAID' ||
+    upper === 'PAYMENT.CAPTURE.COMPLETED'
+  ) {
+    return 'INVOICE_PAID';
+  }
 
   if (
     upper === 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED' ||
     upper === 'PAYMENT.PAYOUTSBATCH.SUCCESS'
   ) {
-    return 'SUCCESS';
+    return 'PAYOUT_SUCCESS';
   }
 
   if (
@@ -50,7 +91,7 @@ function classifyEvent(eventType: string): 'SUCCESS' | 'FAILED' | 'IGNORE' {
     upper === 'PAYMENT.PAYOUTS-ITEM.REFUNDED' ||
     upper === 'PAYMENT.PAYOUTSBATCH.DENIED'
   ) {
-    return 'FAILED';
+    return 'PAYOUT_FAILED';
   }
 
   return 'IGNORE';
@@ -99,6 +140,53 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, processed: false });
   }
 
+  // Handle customer invoice payments
+  if (action === 'INVOICE_PAID') {
+    const { paypalInvoiceId, invoiceNumber } = extractInvoiceIdentifier(event);
+    let invoice = paypalInvoiceId
+      ? demoStore.getInvoiceByPayPalId(paypalInvoiceId)
+      : undefined;
+    if (!invoice && invoiceNumber) {
+      invoice = demoStore.getInvoiceByNumber(invoiceNumber);
+    }
+    // Fallback for single-tenant demo if IDs were not persisted across restart
+    if (!invoice) {
+      const allInvoices = demoStore.getInvoices();
+      invoice = allInvoices.find((i) => i.status !== 'PAID');
+    }
+
+    if (!invoice) {
+      return NextResponse.json({
+        received: true,
+        processed: false,
+        reason: 'INVOICE_NOT_FOUND',
+      });
+    }
+
+    if (invoice.status === 'PAID') {
+      return NextResponse.json({
+        received: true,
+        processed: true,
+        alreadySettled: true,
+      });
+    }
+
+    demoStore.payInvoice(invoice.id, {
+      actor: 'PAYPAL_WEBHOOK',
+      isSimulated: false,
+      action: 'INVOICE_PAID_PAYPAL',
+      details: `PayPal Webhook verified payment for invoice ${invoice.invoiceNumber} (${invoice.customerName}). Cash settled into merchant cleared balance.`,
+    });
+
+    return NextResponse.json({
+      received: true,
+      processed: true,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+    });
+  }
+
+  // Handle vendor payout batches
   const batchId = extractBatchId(event);
   if (!batchId) {
     return NextResponse.json({ received: true, processed: false });
@@ -110,7 +198,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    if (action === 'SUCCESS') {
+    if (action === 'PAYOUT_SUCCESS') {
       demoStore.completePayout({
         billId: request.billId,
         idempotencyKey: request.idempotencyKey,

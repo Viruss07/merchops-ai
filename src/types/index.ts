@@ -30,6 +30,9 @@ export interface Invoice {
   status: InvoiceStatus;
   description: string;
   paymentUrl?: string;
+  paypalInvoiceId?: string;
+  recipientViewUrl?: string;
+  qrCodeUrl?: string;
   lastReminderSentAt?: string;
 }
 

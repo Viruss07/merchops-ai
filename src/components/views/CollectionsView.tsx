@@ -13,12 +13,16 @@ interface CollectionsViewProps {
   invoices: Invoice[];
   onSimulatePayment: (invoiceId: string) => Promise<void>;
   onReminderSent: (invoiceId: string, subject: string, body: string) => Promise<void>;
+  onCreatePayPalInvoice?: (invoice: Invoice) => Promise<void>;
+  onSyncInvoices?: () => Promise<void>;
 }
 
 export function CollectionsView({
   invoices,
   onSimulatePayment,
   onReminderSent,
+  onCreatePayPalInvoice,
+  onSyncInvoices,
 }: CollectionsViewProps) {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -135,6 +139,8 @@ export function CollectionsView({
         invoices={invoices}
         onOpenDraft={handleOpenDraft}
         onOpenPaymentModal={handleOpenPaymentModal}
+        onCreatePayPalInvoice={onCreatePayPalInvoice}
+        onSyncInvoices={onSyncInvoices}
       />
 
       {/* AI Reminder Drawer */}

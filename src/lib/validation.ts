@@ -8,6 +8,20 @@ export const invoiceIdBodySchema = z.object({
   invoiceId: invoiceIdSchema,
 });
 
+export const invoiceCreateSchema = z.object({
+  invoiceId: invoiceIdSchema.optional(),
+  invoiceNumber: z.string().min(1).max(50).optional(),
+  customerName: z.string().min(1).max(100).optional(),
+  customerEmail: z.string().email().optional(),
+  amountCents: z.number().int().positive().optional(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  description: z.string().min(1).max(500).optional(),
+});
+
+export const invoiceSyncSchema = z.object({
+  invoiceId: invoiceIdSchema.optional(),
+});
+
 export const payoutSchema = z.object({
   billId: z.string().min(1).max(100),
   confirmed: z.literal(true),

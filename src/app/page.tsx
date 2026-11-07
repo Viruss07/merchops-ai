@@ -11,8 +11,10 @@ import {
   resetDemo,
   simulatePayment,
   approveReminder,
+  createPayPalInvoice,
+  syncInvoices,
 } from '@/lib/apiClient';
-import type { StateSnapshot } from '@/types';
+import type { StateSnapshot, Invoice } from '@/types';
 import { Navbar } from '@/components/Navbar';
 import { Navigation } from '@/components/Navigation';
 import type { TabKey } from '@/components/Navigation';
@@ -183,6 +185,36 @@ export default function DashboardPage() {
     [],
   );
 
+  const handleCreatePayPalInvoice = useCallback(
+    async (invoice: Invoice) => {
+      try {
+        const response = await createPayPalInvoice(invoice.id);
+        setSnapshot(response.snapshot);
+      } catch (error) {
+        if (error instanceof ApiError && error.snapshot) {
+          setSnapshot(error.snapshot);
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const handleSyncInvoices = useCallback(
+    async () => {
+      try {
+        const response = await syncInvoices();
+        setSnapshot(response.snapshot);
+      } catch (error) {
+        if (error instanceof ApiError && error.snapshot) {
+          setSnapshot(error.snapshot);
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
   const forecast = useMemo(() => {
     if (!snapshot) return null;
     return calculateRunway({
@@ -317,6 +349,8 @@ export default function DashboardPage() {
               invoices={snapshot.invoices}
               onSimulatePayment={handleSimulatePayment}
               onReminderSent={handleReminderSent}
+              onCreatePayPalInvoice={handleCreatePayPalInvoice}
+              onSyncInvoices={handleSyncInvoices}
             />
           )}
 

@@ -23,7 +23,7 @@ AI agents generating, modifying, or refactoring code in this repository **must e
 3. **Integer Cents Representation**: All financial amounts, calculations, ledger entries, and database columns must use integer cents (e.g., `$150.00` is represented as `15000`). Never use floating-point types (`FLOAT`, `REAL`, or JavaScript `number` arithmetic without quantization) for monetary figures.
 4. **Ownership and Balance Validation**: Always validate record ownership (tenant/merchant ID) and account balances directly against the PostgreSQL database before preparing any action.
 5. **Mandatory Human-in-the-Loop Approval**: Every outbound payout or money-moving action requires explicit, interactive merchant confirmation via UI approval.
-6. **Idempotency Keys**: Every external API request that initiates a payment, payout, or invoice must include a cryptographically unique idempotency key (e.g., `UUIDv4`).
+6. **Deterministic Idempotency Keys**: Every external API request that initiates a payout, invoice mutation, or outbound payment must include a deterministic `PayPal-Request-Id` derived from `(entity_id, action[, attempt])`. Never use a random key like UUIDv4 per attempt, as a random key per attempt makes duplicate payments possible during network retries.
 7. **Webhook Signature Verification**: All inbound PayPal webhooks must be cryptographically verified against PayPal's public certificates before any payload processing.
 8. **Safe Duplicate Processing**: Webhook consumers must handle duplicate and out-of-order events idempotently using database-tracked event IDs.
 9. **Immutable Audit Trail**: All financial events, status transitions, AI recommendations, and merchant approval decisions must be permanently recorded in an immutable audit log table.
@@ -35,7 +35,7 @@ AI agents generating, modifying, or refactoring code in this repository **must e
 ## 3. Frozen Technology Stack
 
 Do not introduce alternate frameworks or incompatible libraries. The stack is frozen as:
-- **Operating System / Dev Env**: Windows 11 / Google Antigravity
+- **Operating System / Dev Env**: Cross-Platform (macOS / Linux / Windows 11)
 - **Application Framework**: Next.js App Router (TypeScript)
 - **Frontend / UI**: React (Server & Client Components), Tailwind CSS, AG Studio, AG Grid (where dense tabular data is presented)
 - **Validation**: Zod (for all API request/response bodies, forms, and env variables)

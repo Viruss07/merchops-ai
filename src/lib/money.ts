@@ -106,6 +106,18 @@ export function centsToPayPalAmount(cents: number): string {
 }
 
 /**
+ * Calculates standard US domestic PayPal Payout fee in integer cents:
+ * 2% of transaction amount, minimum $0.25 (25 cents), maximum $1.00 (100 cents).
+ */
+export function calculatePayoutFeeCents(amountCents: number): number {
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+    return 0;
+  }
+  const twoPercent = Math.round(amountCents * 0.02);
+  return Math.min(100, Math.max(25, twoPercent));
+}
+
+/**
  * Safe addition of integer cents.
  */
 export function addCents(a: number, b: number): number {
@@ -138,11 +150,13 @@ export interface PayoutPolicyResult {
 /**
  * Deterministic cash reserve policy. A payout is allowed when the projected
  * balance stays at or above the configured reserve floor.
+ * Supports optional fee-inclusive calculation.
  */
 export function evaluatePayoutPolicy(input: {
   currentBalanceCents: number;
   minReserveCents: number;
   billAmountCents: number;
+  feeCents?: number;
 }): PayoutPolicyResult {
   assertValidCents(input.currentBalanceCents, 'currentBalanceCents');
   assertValidCents(input.minReserveCents, 'minReserveCents');
@@ -151,7 +165,11 @@ export function evaluatePayoutPolicy(input: {
     throw new RangeError('billAmountCents must be positive');
   }
 
-  const postPayoutBalanceCents = subtractCents(input.currentBalanceCents, input.billAmountCents);
+  const fee = input.feeCents ?? 0;
+  assertValidCents(fee, 'feeCents');
+
+  const totalOutflow = addCents(input.billAmountCents, fee);
+  const postPayoutBalanceCents = subtractCents(input.currentBalanceCents, totalOutflow);
   const bufferCents = subtractCents(postPayoutBalanceCents, input.minReserveCents);
   const wouldBreach = bufferCents < 0;
 

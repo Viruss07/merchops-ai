@@ -1,4 +1,4 @@
-import { centsToPayPalAmount } from '@/lib/money';
+import { centsToPayPalAmount, parseUSDToCents } from '@/lib/money';
 
 export const PERMITTED_SANDBOX_ORIGIN =
   'https://api-m.sandbox.paypal.com';
@@ -179,6 +179,7 @@ export interface DispatchPayoutParams {
   note: string;
   emailSubject: string;
   emailMessage: string;
+  mockApplicationCodes?: string;
 }
 
 export async function dispatchPayout(
@@ -208,15 +209,23 @@ export async function dispatchPayout(
     ],
   };
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'PayPal-Request-Id': params.idempotencyKey,
+  };
+
+  if (params.mockApplicationCodes) {
+    headers['PayPal-Mock-Response'] = JSON.stringify({
+      mock_application_codes: params.mockApplicationCodes,
+    });
+  }
+
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/v1/payments/payouts`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'PayPal-Request-Id': params.idempotencyKey,
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
       cache: 'no-store',
@@ -455,4 +464,428 @@ export async function verifyWebhookSignature(
 
   if (typeof data !== 'object' || data === null) return false;
   return (data as Record<string, unknown>).verification_status === 'SUCCESS';
+}
+
+export interface CreateInvoiceInput {
+  invoiceNumber: string;
+  invoiceDate?: string;
+  dueDate: string;
+  currency?: string;
+  customerName: string;
+  customerEmail: string;
+  itemDescription: string;
+  amountCents: number;
+  note?: string;
+}
+
+export interface PayPalInvoiceDetails {
+  id: string;
+  status: string;
+  invoiceNumber: string;
+  recipientViewUrl: string | null;
+  invoicerViewUrl: string | null;
+  amountCents: number;
+  currency: string;
+}
+
+/**
+ * Creates a DRAFT invoice using PayPal Invoicing v2 (POST /v2/invoicing/invoices)
+ */
+export async function createDraftInvoice(
+  input: CreateInvoiceInput
+): Promise<{ invoiceId: string; href?: string }> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  const nameParts = input.customerName.trim().split(/\s+/);
+  const givenName = nameParts[0] || 'Customer';
+  const surname = nameParts.slice(1).join(' ') || 'Recipient';
+
+  const payload = {
+    detail: {
+      invoice_number: input.invoiceNumber,
+      invoice_date: input.invoiceDate || new Date().toISOString().slice(0, 10),
+      payment_term: {
+        term_type: 'DUE_ON_DATE_SPECIFIED',
+        due_date: input.dueDate,
+      },
+      currency_code: input.currency || 'USD',
+      note: input.note || 'Payment due per merchant agreement.',
+    },
+    primary_recipients: [
+      {
+        billing_info: {
+          name: {
+            given_name: givenName,
+            surname: surname,
+          },
+          email_address: input.customerEmail,
+        },
+      },
+    ],
+    items: [
+      {
+        name: input.itemDescription,
+        quantity: '1',
+        unit_amount: {
+          currency_code: input.currency || 'USD',
+          value: centsToPayPalAmount(input.amountCents),
+        },
+      },
+    ],
+    amount: {
+      currency_code: input.currency || 'USD',
+      value: centsToPayPalAmount(input.amountCents),
+    },
+  };
+
+  const requestId = `inv-create-${input.invoiceNumber.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/v2/invoicing/invoices`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'PayPal-Request-Id': requestId,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal Invoicing create request timed out or network failed.'
+    );
+  }
+
+  if (!response.ok) {
+    let paypalName: string | undefined;
+    try {
+      const errBody = (await response.json()) as Record<string, unknown>;
+      paypalName = typeof errBody.name === 'string' ? errBody.name : undefined;
+    } catch {
+      paypalName = undefined;
+    }
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal Invoicing creation rejected with status HTTP ${response.status}.`,
+      { status: response.status, paypalName }
+    );
+  }
+
+  const data = (await response.json()) as Record<string, unknown>;
+  const rawId = data.id || data.invoice_id;
+  const invoiceId = typeof rawId === 'string' ? rawId : '';
+  const href = typeof data.href === 'string' ? data.href : undefined;
+
+  return { invoiceId, href };
+}
+
+/**
+ * Sends a draft invoice to the customer via PayPal (POST /v2/invoicing/invoices/{id}/send)
+ */
+export async function sendInvoice(
+  invoiceId: string,
+  sendToRecipient = true
+): Promise<void> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/send`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ send_to_recipient: sendToRecipient }),
+        signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      }
+    );
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal Invoicing send request timed out or network failed.'
+    );
+  }
+
+  if (!response.ok && response.status !== 202 && response.status !== 200) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal Invoicing send rejected with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+}
+
+/**
+ * Fetches invoice details and extract recipient_view_url (GET /v2/invoicing/invoices/{id})
+ */
+export async function getInvoice(invoiceId: string): Promise<PayPalInvoiceDetails> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      }
+    );
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal Invoicing lookup timed out or network failed.'
+    );
+  }
+
+  if (!response.ok) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal Invoicing lookup rejected with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+
+  const data = (await response.json()) as Record<string, unknown>;
+  const detail = typeof data.detail === 'object' && data.detail !== null ? (data.detail as Record<string, unknown>) : {};
+  const metadata = typeof detail.metadata === 'object' && detail.metadata !== null ? (detail.metadata as Record<string, unknown>) : {};
+  const amountObj = typeof data.amount === 'object' && data.amount !== null ? (data.amount as Record<string, unknown>) : {};
+
+  const id = typeof data.id === 'string' ? data.id : invoiceId;
+  const status = typeof data.status === 'string' ? data.status.toUpperCase() : 'UNKNOWN';
+  const invoiceNumber = typeof detail.invoice_number === 'string' ? detail.invoice_number : '';
+  const recipientViewUrl = typeof metadata.recipient_view_url === 'string' ? metadata.recipient_view_url : null;
+  const invoicerViewUrl = typeof metadata.invoicer_view_url === 'string' ? metadata.invoicer_view_url : null;
+
+  const rawAmountVal = typeof amountObj.value === 'string' ? amountObj.value : '0';
+  const amountCents = parseUSDToCents(rawAmountVal) ?? 0;
+  const currency = typeof amountObj.currency_code === 'string' ? amountObj.currency_code : 'USD';
+
+  return {
+    id,
+    status,
+    invoiceNumber,
+    recipientViewUrl,
+    invoicerViewUrl,
+    amountCents,
+    currency,
+  };
+}
+
+/**
+ * Sends a reminder for an invoice using approved AI text (POST /v2/invoicing/invoices/{id}/remind)
+ */
+export async function remindInvoice(
+  invoiceId: string,
+  options: { subject?: string; note?: string; sendToInvoicer?: boolean }
+): Promise<void> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/remind`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          subject: options.subject || 'Payment Reminder',
+          note: options.note || 'This is a gentle reminder regarding your outstanding invoice.',
+          send_to_invoicer: options.sendToInvoicer ?? false,
+        }),
+        signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      }
+    );
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal Invoicing remind request timed out or network failed.'
+    );
+  }
+
+  if (!response.ok && response.status !== 204 && response.status !== 200) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal Invoicing remind rejected with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+}
+
+/**
+ * Cancels a sent invoice (POST /v2/invoicing/invoices/{id}/cancel)
+ */
+export async function cancelInvoice(
+  invoiceId: string,
+  options?: { subject?: string; note?: string; sendToRecipient?: boolean }
+): Promise<void> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          subject: options?.subject || 'Invoice Cancelled',
+          note: options?.note || 'Cancelled per merchant instructions.',
+          send_to_invoicer: false,
+          send_to_recipient: options?.sendToRecipient ?? true,
+        }),
+        signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      }
+    );
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal Invoicing cancel request timed out or network failed.'
+    );
+  }
+
+  if (!response.ok && response.status !== 204 && response.status !== 200) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal Invoicing cancel rejected with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+}
+
+/**
+ * Generates a payment QR code for the invoice (POST /v2/invoicing/invoices/{id}/generate-qr-code)
+ */
+export async function generateInvoiceQrCode(
+  invoiceId: string,
+  width = 300,
+  height = 300
+): Promise<string> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/generate-qr-code`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ width, height }),
+        signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      }
+    );
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal QR code generation timed out or network failed.'
+    );
+  }
+
+  if (!response.ok) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal QR code generation rejected with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('image/')) {
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    return `data:${contentType};base64,${base64}`;
+  }
+
+  const data = (await response.json()) as Record<string, unknown>;
+  return typeof data.image === 'string' ? data.image : '';
+}
+
+/**
+ * Records an off-PayPal external payment (POST /v2/invoicing/invoices/{id}/payments)
+ */
+export async function recordInvoicePayment(
+  invoiceId: string,
+  options: {
+    amountCents: number;
+    method?: 'CASH' | 'CHECK' | 'OTHER' | 'CREDIT_CARD';
+    paymentDate?: string;
+    note?: string;
+  }
+): Promise<void> {
+  const baseUrl = getPermittedBaseUrl();
+  const accessToken = await getPayPalAccessToken();
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/payments`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          method: options.method || 'OTHER',
+          payment_date: options.paymentDate || new Date().toISOString().slice(0, 10),
+          amount: {
+            currency_code: 'USD',
+            value: centsToPayPalAmount(options.amountCents),
+          },
+          note: options.note || 'Recorded offline/external payment',
+        }),
+        signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+        cache: 'no-store',
+      }
+    );
+  } catch {
+    throw new PayPalError(
+      'PAYPAL_OUTCOME_UNKNOWN',
+      'PayPal payment recording timed out or network failed.'
+    );
+  }
+
+  if (!response.ok && response.status !== 200 && response.status !== 201) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      `PayPal payment recording rejected with status HTTP ${response.status}.`,
+      { status: response.status }
+    );
+  }
 }

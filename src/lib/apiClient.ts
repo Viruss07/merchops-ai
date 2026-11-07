@@ -1,4 +1,4 @@
-import type { StateSnapshot } from '@/types';
+import type { StateSnapshot, Invoice } from '@/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -172,6 +172,35 @@ export function draftReminder(
     method: 'POST',
     body: JSON.stringify({ invoiceId }),
     signal,
+  });
+}
+
+export interface CreatePayPalInvoiceResponse {
+  success: boolean;
+  paypalInvoiceId: string;
+  recipientViewUrl: string | null;
+  invoice: Invoice;
+  snapshot: StateSnapshot;
+}
+
+export interface SyncInvoicesResponse {
+  success: boolean;
+  message: string;
+  updated: number;
+  snapshot: StateSnapshot;
+}
+
+export function createPayPalInvoice(invoiceId?: string): Promise<CreatePayPalInvoiceResponse> {
+  return request<CreatePayPalInvoiceResponse>('/api/invoices/create', {
+    method: 'POST',
+    body: JSON.stringify({ invoiceId }),
+  });
+}
+
+export function syncInvoices(invoiceId?: string): Promise<SyncInvoicesResponse> {
+  return request<SyncInvoicesResponse>('/api/invoices/sync', {
+    method: 'POST',
+    body: JSON.stringify({ invoiceId }),
   });
 }
 

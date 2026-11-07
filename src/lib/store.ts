@@ -215,7 +215,62 @@ export const demoStore = {
     return inv ? structuredClone(inv) : undefined;
   },
 
-  payInvoice(id: string):
+  getInvoiceByPayPalId(paypalInvoiceId: string): Invoice | undefined {
+    const inv = storeState.invoices.find((i) => i.paypalInvoiceId === paypalInvoiceId);
+    return inv ? structuredClone(inv) : undefined;
+  },
+
+  getInvoiceByNumber(invoiceNumber: string): Invoice | undefined {
+    const inv = storeState.invoices.find((i) => i.invoiceNumber === invoiceNumber);
+    return inv ? structuredClone(inv) : undefined;
+  },
+
+  attachPayPalInvoice(
+    id: string,
+    details: {
+      paypalInvoiceId: string;
+      recipientViewUrl?: string | null;
+      qrCodeUrl?: string | null;
+    }
+  ): { ok: true; invoice: Invoice; snapshot: StateSnapshot } | { ok: false; reason: 'NOT_FOUND' } {
+    const inv = storeState.invoices.find((i) => i.id === id);
+    if (!inv) return { ok: false, reason: 'NOT_FOUND' };
+
+    inv.paypalInvoiceId = details.paypalInvoiceId;
+    if (details.recipientViewUrl) {
+      inv.recipientViewUrl = details.recipientViewUrl;
+      inv.paymentUrl = details.recipientViewUrl;
+    }
+    if (details.qrCodeUrl) {
+      inv.qrCodeUrl = details.qrCodeUrl;
+    }
+
+    storeState.auditLogs.unshift({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor: 'SYSTEM',
+      action: 'INVOICE_SYNCED_PAYPAL',
+      details: `Invoice ${inv.invoiceNumber} linked to PayPal Sandbox ID ${details.paypalInvoiceId}.`,
+      amountCents: inv.amountCents,
+      isSimulated: false,
+    });
+
+    return {
+      ok: true,
+      invoice: structuredClone(inv),
+      snapshot: this.getSnapshot(),
+    };
+  },
+
+  payInvoice(
+    id: string,
+    options?: {
+      actor?: AuditLogEntry['actor'];
+      isSimulated?: boolean;
+      details?: string;
+      action?: string;
+    }
+  ):
     | { ok: true; invoice: Invoice; snapshot: StateSnapshot }
     | { ok: false; reason: 'NOT_FOUND' | 'ALREADY_PAID' } {
     const inv = storeState.invoices.find((i) => i.id === id);
@@ -226,14 +281,21 @@ export const demoStore = {
     inv.daysOverdue = 0;
     storeState.account.clearedBalanceCents += inv.amountCents;
 
+    const actor = options?.actor ?? 'MERCHANT';
+    const isSimulated = options?.isSimulated ?? true;
+    const action = options?.action ?? (isSimulated ? 'INVOICE_PAID_SIMULATED' : 'INVOICE_PAID_PAYPAL');
+    const details =
+      options?.details ??
+      `Invoice ${inv.invoiceNumber} for ${inv.customerName} marked paid (+$${(inv.amountCents / 100).toFixed(2)}).`;
+
     storeState.auditLogs.unshift({
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      actor: 'MERCHANT',
-      action: 'INVOICE_PAID_SIMULATED',
-      details: `Invoice ${inv.invoiceNumber} for ${inv.customerName} marked paid (+$${(inv.amountCents / 100).toFixed(2)}).`,
+      actor,
+      action,
+      details,
       amountCents: inv.amountCents,
-      isSimulated: true,
+      isSimulated,
     });
 
     return {
@@ -243,22 +305,30 @@ export const demoStore = {
     };
   },
 
-  recordReminderSent(id: string, subject: string, body: string):
+  recordReminderSent(
+    id: string,
+    subject: string,
+    body: string,
+    options?: { deliveredViaPayPal?: boolean }
+  ):
     | { ok: true; invoice: Invoice; snapshot: StateSnapshot }
     | { ok: false; reason: 'NOT_FOUND' } {
     const inv = storeState.invoices.find((i) => i.id === id);
     if (!inv) return { ok: false, reason: 'NOT_FOUND' };
 
     inv.lastReminderSentAt = new Date().toISOString();
+    const viaPayPal = options?.deliveredViaPayPal ?? false;
 
     storeState.auditLogs.unshift({
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       actor: 'MERCHANT',
-      action: 'REMINDER_DRAFT_APPROVED',
-      details: `Merchant reviewed and approved reminder draft "${subject}" for ${inv.customerName} (${inv.invoiceNumber}), ${body.length} characters. Staged locally; no outbound email transport configured.`,
+      action: viaPayPal ? 'REMINDER_DISPATCHED_PAYPAL' : 'REMINDER_DRAFT_APPROVED',
+      details: viaPayPal
+        ? `Merchant reviewed and approved reminder "${subject}" for ${inv.customerName} (${inv.invoiceNumber}); dispatched via PayPal Sandbox Invoicing API.`
+        : `Merchant reviewed and approved reminder draft "${subject}" for ${inv.customerName} (${inv.invoiceNumber}), ${body.length} characters. Staged locally; no outbound email transport configured.`,
       amountCents: inv.amountCents,
-      isSimulated: false,
+      isSimulated: !viaPayPal,
     });
 
     return {

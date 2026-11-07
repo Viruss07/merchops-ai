@@ -15,7 +15,7 @@ import {
   Clock,
 } from 'lucide-react';
 import type { Bill, MerchantAccount, StateSnapshot } from '@/types';
-import { formatCentsToUSD } from '@/lib/money';
+import { formatCentsToUSD, calculatePayoutFeeCents } from '@/lib/money';
 import {
   ApiError,
   authorizePayout,
@@ -108,10 +108,13 @@ export function PayoutApprovalModal({
 
   const currentBalance = account.clearedBalanceCents;
   const reserve = account.minReserveCents;
+  const estimatedFeeCents = calculatePayoutFeeCents(bill.amountCents);
+  const feeCents = executionMode === 'PAYPAL_SANDBOX' ? estimatedFeeCents : 0;
   const policy = evaluatePayoutPolicy({
     currentBalanceCents: currentBalance,
     minReserveCents: reserve,
     billAmountCents: bill.amountCents,
+    feeCents,
   });
   const postPayoutBalance = policy.postPayoutBalanceCents;
   const wouldBreach = policy.wouldBreach;
@@ -307,6 +310,13 @@ export function PayoutApprovalModal({
                 </span>
               </div>
             </div>
+
+            {executionMode === 'PAYPAL_SANDBOX' && (
+              <div className="flex items-center justify-between text-[11px] bg-blue-100/60 rounded px-2.5 py-1 text-blue-900">
+                <span>PayPal Payout Fee (2%, max $1.00 USD):</span>
+                <span className="font-mono font-bold">-{formatCentsToUSD(estimatedFeeCents)} (included in reserve check)</span>
+              </div>
+            )}
 
             {wouldBreach ? (
               <div className="pt-1 space-y-2">
