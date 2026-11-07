@@ -586,7 +586,7 @@ export function Journey({
                 Every decision is in the append-only audit log, including the one the floor refused.
               </p>
 
-              <ul className="mt-4 divide-y divide-rule overflow-hidden rounded-lg border border-rule bg-panel">
+              <ul className="mt-4 overflow-hidden rounded-lg border border-rule bg-panel">
                 {logs.length === 0 ? (
                   <li className="px-4 py-4 text-xs text-ink-3">
                     No events yet. Try the act again.
@@ -595,6 +595,9 @@ export function Journey({
                   logs.map((log) => <ReceiptRow key={log.id} log={log} />)
                 )}
               </ul>
+              <p className="mt-2 text-[11px] text-ink-3">
+                {logs.length} events · append-only · no edits
+              </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
@@ -618,7 +621,7 @@ export function Journey({
         </div>
 
         <div className="lg:col-span-7">
-          <div className="rounded-lg border border-rule bg-panel p-4 shadow-sm sm:p-5">
+          <div className="rounded-lg border border-rule bg-panel p-4 sm:p-5">
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-sm font-medium">30-day runway</h2>
               <span className="mono text-[11px] text-ink-3">as of {formatDate(asOfDate)}</span>
@@ -671,15 +674,49 @@ function Readout({
   );
 }
 
+const RECEIPT_LABELS: Record<string, string> = {
+  SYSTEM_INITIALIZED: 'Ledger initialized',
+  RUNWAY_MONITOR_ACTIVE: 'Runway monitor active',
+  PAYOUT_BLOCKED_RESERVE_BREACH: 'Payout refused by the floor',
+  PAYOUT_APPROVED: 'Payout approved by merchant',
+  PAYOUT_ACCEPTED_PAYPAL: 'Payout accepted by PayPal',
+  PAYOUT_IN_FLIGHT: 'Payout in flight',
+  PAYOUT_FAILED: 'Payout failed',
+  PAYOUT_OUTCOME_UNKNOWN: 'Payout outcome unknown',
+  INVOICE_PAID_PAYPAL: 'Invoice collected',
+  INVOICE_SYNCED_PAYPAL: 'Invoice synced',
+  REMINDER_DRAFTED_OPENROUTER: 'Reminder drafted by AI',
+  REMINDER_DRAFTED_TEMPLATE: 'Reminder drafted',
+};
+
+function receiptLabel(action: string): string {
+  return RECEIPT_LABELS[action] ?? action.split('_').join(' ').toLowerCase();
+}
+
+function receiptTone(action: string): { border: string; dot: string } {
+  if (action.includes('BLOCKED') || action.includes('FAILED')) {
+    return { border: 'border-l-blocked', dot: 'bg-blocked' };
+  }
+  if (action.includes('PAID') || action.includes('APPROVED') || action.includes('ACCEPTED')) {
+    return { border: 'border-l-safe', dot: 'bg-safe' };
+  }
+  return { border: 'border-l-rule-strong', dot: 'bg-ink-3' };
+}
+
 function ReceiptRow({ log }: { log: AuditLogEntry }) {
+  const tone = receiptTone(log.action);
   return (
-    <li className="px-4 py-3">
+    <li className={`border-b border-rule border-l-2 px-4 py-3 last:border-b-0 ${tone.border}`}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-medium">{log.action.split('_').join(' ')}</span>
+        <span className="flex items-center gap-2 text-xs font-medium">
+          <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} aria-hidden="true" />
+          {receiptLabel(log.action)}
+        </span>
         <span className="mono text-[10px] text-ink-3">{formatTimestamp(log.timestamp)}</span>
       </div>
       <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">{log.details}</p>
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="mono text-[10px] text-ink-3">{log.action}</span>
         <span className="mono text-[10px] text-ink-3">{log.id}</span>
         <span className="text-[10px] text-ink-3">
           {log.actor.split('_').join(' ').toLowerCase()}

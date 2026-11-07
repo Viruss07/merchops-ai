@@ -163,6 +163,75 @@ export function AuditView({ logs }: AuditViewProps) {
     }
   };
 
+  const renderFeed = () => (
+    <div className="overflow-hidden rounded-lg border border-rule bg-panel">
+      <div className="divide-y divide-rule">
+        {filteredLogs.length === 0 ? (
+          <div className="p-8 text-center text-xs text-ink-3">
+            No audit events found for this filter.
+          </div>
+        ) : (
+          filteredLogs.map((log) => {
+            const isInflow = log.action === 'INVOICE_PAID_SIMULATED';
+            const isOutflow = log.action.includes('PAYOUT_DISBURSED');
+            const isBlocked = log.action.includes('BLOCKED');
+
+            return (
+              <div
+                key={log.id}
+                className="p-4 hover:bg-paper transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              >
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getActorBadge(log.actor)}
+                    {getActionBadge(log.action)}
+                    {log.isSimulated && (
+                      <span className="rounded bg-risk-field px-2 py-0.5 text-[10px] font-semibold text-risk border border-risk">
+                        Local Simulation
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs sm:text-sm text-ink-2 leading-normal">{log.details}</p>
+                </div>
+
+                <div className="flex sm:flex-col items-end justify-between sm:justify-center shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-rule">
+                  {log.amountCents !== undefined && (
+                    <span
+                      className={`font-mono text-xs font-semibold ${
+                        isInflow
+                          ? 'text-safe'
+                          : isOutflow
+                            ? 'text-ink'
+                            : isBlocked
+                              ? 'text-blocked'
+                              : 'text-ink-2'
+                      }`}
+                    >
+                      {isInflow
+                        ? `+${formatCentsToUSD(log.amountCents)}`
+                        : isOutflow
+                          ? `-${formatCentsToUSD(log.amountCents)}`
+                          : isBlocked
+                            ? `Blocked: ${formatCentsToUSD(log.amountCents)}`
+                            : formatCentsToUSD(log.amountCents)}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-mono text-ink-3">
+                    {new Date(log.timestamp).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {/* Module Overview Header */}
@@ -251,7 +320,7 @@ export function AuditView({ logs }: AuditViewProps) {
         </div>
 
         {/* View Mode Toggle: AG Grid vs Feed */}
-        <div className="flex items-center space-x-1 bg-rule p-0.5 rounded-lg border border-rule self-start lg:self-auto shrink-0">
+        <div className="hidden items-center space-x-1 bg-rule p-0.5 rounded-lg border border-rule self-start sm:flex lg:self-auto shrink-0">
           <button
             type="button"
             onClick={() => setViewMode('GRID')}
@@ -277,77 +346,13 @@ export function AuditView({ logs }: AuditViewProps) {
         </div>
       </div>
 
-      {/* Audit Log Content: AG Grid Table or Feed List */}
-      {viewMode === 'GRID' ? (
-        <AuditGrid logs={filteredLogs} />
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-rule bg-panel">
-          <div className="divide-y divide-rule">
-            {filteredLogs.length === 0 ? (
-              <div className="p-8 text-center text-xs text-ink-3">
-                No audit events found for this filter.
-              </div>
-            ) : (
-              filteredLogs.map((log) => {
-                const isInflow = log.action === 'INVOICE_PAID_SIMULATED';
-                const isOutflow = log.action.includes('PAYOUT_DISBURSED');
-                const isBlocked = log.action.includes('BLOCKED');
+      {/* Phone: stacked feed */}
+      <div className="sm:hidden">{renderFeed()}</div>
 
-                return (
-                  <div
-                    key={log.id}
-                    className="p-4 hover:bg-paper transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {getActorBadge(log.actor)}
-                        {getActionBadge(log.action)}
-                        {log.isSimulated && (
-                          <span className="rounded bg-risk-field px-2 py-0.5 text-[10px] font-semibold text-risk border border-risk">
-                            Local Simulation
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs sm:text-sm text-ink-2 leading-normal">{log.details}</p>
-                    </div>
-
-                    <div className="flex sm:flex-col items-end justify-between sm:justify-center shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-rule">
-                      {log.amountCents !== undefined && (
-                        <span
-                          className={`font-mono text-xs font-semibold ${
-                            isInflow
-                              ? 'text-safe'
-                              : isOutflow
-                                ? 'text-ink'
-                                : isBlocked
-                                  ? 'text-blocked'
-                                  : 'text-ink-2'
-                          }`}
-                        >
-                          {isInflow
-                            ? `+${formatCentsToUSD(log.amountCents)}`
-                            : isOutflow
-                              ? `-${formatCentsToUSD(log.amountCents)}`
-                              : isBlocked
-                                ? `Blocked: ${formatCentsToUSD(log.amountCents)}`
-                                : formatCentsToUSD(log.amountCents)}
-                        </span>
-                      )}
-                      <span className="text-[11px] font-mono text-ink-3">
-                        {new Date(log.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
+      {/* Desktop: selected view */}
+      <div className="hidden sm:block">
+        {viewMode === 'GRID' ? <AuditGrid logs={filteredLogs} /> : renderFeed()}
+      </div>
     </div>
   );
 }

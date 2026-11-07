@@ -53,6 +53,25 @@ export function BillsGrid({
 }: BillsGridProps) {
   const [quickFilterText, setQuickFilterText] = useState('');
 
+  const visibleBills = useMemo(() => {
+    const q = quickFilterText.trim().toLowerCase();
+    if (!q) return bills;
+    return bills.filter((bill) =>
+      [
+        bill.billNumber,
+        bill.vendorName,
+        bill.vendorEmail,
+        bill.category,
+        bill.status,
+        formatCentsToUSD(bill.amountCents),
+        (bill.amountCents / 100).toFixed(2),
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [bills, quickFilterText]);
+
   const columnDefs = useMemo<ColDef<Bill>[]>(
     () => [
       {
@@ -447,8 +466,87 @@ export function BillsGrid({
         </div>
       </div>
 
+      {/* Phone: stacked list */}
+      <div className="divide-y divide-rule sm:hidden">
+        {visibleBills.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-ink-3">No vendor bills match.</p>
+        ) : (
+          visibleBills.map((bill) => {
+            const isActive = ACTIVE_BILL_STATUSES.includes(bill.status);
+            const postPayoutBalance = currentBalance - bill.amountCents;
+            const wouldBreach = isActive && postPayoutBalance < reserve;
+            const syncing = syncingBillId === bill.id;
+
+            return (
+              <div key={bill.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="mono text-[10px] text-ink-3">{bill.billNumber}</p>
+                    <p className="truncate text-sm font-medium text-ink">{bill.vendorName}</p>
+                    <p className="truncate text-[11px] text-ink-3">{bill.category}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="money text-sm font-semibold text-ink">
+                      {formatCentsToUSD(bill.amountCents)}
+                    </p>
+                    <BillStatus status={bill.status} />
+                  </div>
+                </div>
+                <p className="mt-1 text-[11px] text-ink-3">
+                  Due {bill.dueDate} · {bill.daysUntilDue} days
+                </p>
+                {wouldBreach && (
+                  <p className="mt-1 text-[11px] text-blocked">
+                    Post-payout {formatCentsToUSD(postPayoutBalance)} · floor{' '}
+                    {formatCentsToUSD(reserve)}
+                  </p>
+                )}
+                {isActive && (
+                  <div className="mt-3">
+                    {bill.status === 'IN_FLIGHT' ? (
+                      <button
+                        type="button"
+                        onClick={() => onSyncPayout(bill)}
+                        disabled={syncing}
+                        aria-label={`Sync PayPal status for ${bill.vendorName}`}
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-risk bg-risk-field px-3 py-2 text-xs font-semibold text-risk transition disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-risk"
+                      >
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${syncing ? 'animate-spin motion-reduce:animate-none' : ''}`}
+                        />
+                        {syncing ? 'Checking…' : 'Sync Status'}
+                      </button>
+                    ) : wouldBreach ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenApproval(bill)}
+                        aria-label={`Review blocked payout to ${bill.vendorName}`}
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-blocked bg-blocked-field px-3 py-2 text-xs font-semibold text-blocked transition focus:outline-none focus:ring-2 focus:ring-blocked"
+                      >
+                        <Lock className="h-3.5 w-3.5" />
+                        Review (Blocked)
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenApproval(bill)}
+                        aria-label={`Authorize payout to ${bill.vendorName}`}
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-xs font-semibold text-panel transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        Authorize Payout
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
       {/* AG Grid React Component */}
-      <div className="w-full h-[420px]">
+      <div className="hidden w-full h-[420px] sm:block">
         <AgGridReact<Bill>
           theme={merchOpsTheme}
           rowData={bills}
@@ -463,5 +561,21 @@ export function BillsGrid({
         />
       </div>
     </div>
+  );
+}
+
+function BillStatus({ status }: { status: Bill['status'] }) {
+  const tone =
+    status === 'DISBURSED'
+      ? 'bg-safe-field text-safe'
+      : status === 'FAILED'
+        ? 'bg-blocked-field text-blocked'
+        : status === 'IN_FLIGHT'
+          ? 'bg-risk-field text-risk'
+          : 'bg-rule text-ink-2';
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
+      {STATUS_LABELS[status]}
+    </span>
   );
 }

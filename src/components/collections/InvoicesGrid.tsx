@@ -41,6 +41,25 @@ export function InvoicesGrid({
 }: InvoicesGridProps) {
   const [quickFilterText, setQuickFilterText] = useState('');
 
+  const visibleInvoices = useMemo(() => {
+    const q = quickFilterText.trim().toLowerCase();
+    if (!q) return invoices;
+    return invoices.filter((inv) =>
+      [
+        inv.invoiceNumber,
+        inv.customerName,
+        inv.customerEmail,
+        inv.description,
+        inv.status,
+        formatCentsToUSD(inv.amountCents),
+        (inv.amountCents / 100).toFixed(2),
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [invoices, quickFilterText]);
+
   const columnDefs = useMemo<ColDef<Invoice>[]>(
     () => [
       {
@@ -339,8 +358,86 @@ export function InvoicesGrid({
         </div>
       </div>
 
+      {/* Phone: stacked list */}
+      <div className="divide-y divide-rule sm:hidden">
+        {visibleInvoices.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-ink-3">No invoices match.</p>
+        ) : (
+          visibleInvoices.map((inv) => (
+            <div key={inv.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="mono text-[10px] text-ink-3">{inv.invoiceNumber}</p>
+                  <p className="truncate text-sm font-medium text-ink">{inv.customerName}</p>
+                  <p className="truncate text-[11px] text-ink-3">{inv.description}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="money text-sm font-semibold text-ink">
+                    {formatCentsToUSD(inv.amountCents)}
+                  </p>
+                  <InvoiceStatus invoice={inv} />
+                </div>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-3">
+                <span>Due {inv.dueDate}</span>
+                {inv.status !== 'PAID' &&
+                  (inv.daysOverdue > 0 ? (
+                    <span className="text-blocked">{inv.daysOverdue} days past due</span>
+                  ) : (
+                    <span>On time</span>
+                  ))}
+              </div>
+              {inv.status !== 'PAID' && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenDraft(inv)}
+                    aria-label={`Draft AI collection reminder for ${inv.customerName}`}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-risk bg-risk-field px-3 py-2 text-xs font-semibold text-risk transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-risk"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Remind
+                  </button>
+                  {inv.recipientViewUrl ? (
+                    <a
+                      href={inv.recipientViewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Pay invoice ${inv.invoiceNumber} on PayPal Sandbox`}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-xs font-semibold text-panel transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Pay on PayPal
+                    </a>
+                  ) : onCreatePayPalInvoice ? (
+                    <button
+                      type="button"
+                      onClick={() => void onCreatePayPalInvoice(inv)}
+                      aria-label={`Generate real PayPal Sandbox link for ${inv.invoiceNumber}`}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-rule-strong bg-rule px-3 py-2 text-xs font-semibold text-ink-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-focus"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      PayPal Link
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onOpenPaymentModal(inv)}
+                    aria-label={`Simulate offline payment from ${inv.customerName}`}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-rule-strong bg-panel px-3 py-2 text-xs font-medium text-ink-2 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-focus"
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                    Simulate
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
       {/* AG Grid React Component */}
-      <div className="w-full h-[440px]">
+      <div className="hidden w-full h-[440px] sm:block">
         <AgGridReact<Invoice>
           theme={merchOpsTheme}
           rowData={invoices}
@@ -355,5 +452,30 @@ export function InvoicesGrid({
         />
       </div>
     </div>
+  );
+}
+
+function InvoiceStatus({ invoice }: { invoice: Invoice }) {
+  if (invoice.status === 'PAID') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-safe-field px-2 py-0.5 text-[10px] font-semibold text-safe">
+        <CheckCircle2 className="h-3 w-3" />
+        Paid
+      </span>
+    );
+  }
+  if (invoice.status === 'OVERDUE') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blocked-field px-2 py-0.5 text-[10px] font-semibold text-blocked">
+        <AlertCircle className="h-3 w-3" />
+        Overdue
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-rule px-2 py-0.5 text-[10px] font-medium text-ink-2">
+      <Clock className="h-3 w-3" />
+      Current
+    </span>
   );
 }
