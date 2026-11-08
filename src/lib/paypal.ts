@@ -504,6 +504,20 @@ export async function verifyWebhookSignature(
   return (data as Record<string, unknown>).verification_status === 'SUCCESS';
 }
 
+/**
+ * Safely extracts the final non-empty path segment from a URL string using the URL API.
+ */
+export function extractInvoiceIdFromUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    return last ? decodeURIComponent(last).trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface CreateInvoiceInput {
   invoiceNumber: string;
   invoiceDate?: string;
@@ -705,8 +719,36 @@ export async function createDraftInvoice(
   }
 
   const data = (await response.json()) as Record<string, unknown>;
-  const rawId = data.id || data.invoice_id;
-  const invoiceId = typeof rawId === 'string' ? rawId : '';
+
+  let invoiceId = '';
+  if (typeof data.id === 'string' && data.id.trim()) {
+    invoiceId = data.id.trim();
+  } else if (typeof data.invoice_id === 'string' && data.invoice_id.trim()) {
+    invoiceId = data.invoice_id.trim();
+  } else if (typeof data.href === 'string' && data.href.trim()) {
+    const extracted = extractInvoiceIdFromUrl(data.href.trim());
+    if (extracted) {
+      invoiceId = extracted;
+    }
+  }
+
+  if (!invoiceId) {
+    const location = response.headers.get('location');
+    if (location && location.trim()) {
+      const extracted = extractInvoiceIdFromUrl(location.trim());
+      if (extracted) {
+        invoiceId = extracted;
+      }
+    }
+  }
+
+  if (!invoiceId) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      'PayPal Invoicing creation succeeded with HTTP 201 Created but failed to extract a valid invoice ID from the response (checked data.id, data.invoice_id, data.href, and Location header).'
+    );
+  }
+
   const href = typeof data.href === 'string' ? data.href : undefined;
 
   return { invoiceId, href };
@@ -719,13 +761,21 @@ export async function sendInvoice(
   invoiceId: string,
   sendToRecipient = true
 ): Promise<void> {
+  const cleanId = typeof invoiceId === 'string' ? invoiceId.trim() : '';
+  if (!cleanId) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      'Cannot send invoice: invoiceId must be a non-empty string.'
+    );
+  }
+
   const baseUrl = getPermittedBaseUrl();
   const accessToken = await getPayPalAccessToken();
 
   let response: Response;
   try {
     response = await fetch(
-      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/send`,
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(cleanId)}/send`,
       {
         method: 'POST',
         headers: {
@@ -758,13 +808,21 @@ export async function sendInvoice(
  * Fetches invoice details and extract recipient_view_url (GET /v2/invoicing/invoices/{id})
  */
 export async function getInvoice(invoiceId: string): Promise<PayPalInvoiceDetails> {
+  const cleanId = typeof invoiceId === 'string' ? invoiceId.trim() : '';
+  if (!cleanId) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      'Cannot retrieve invoice: invoiceId must be a non-empty string.'
+    );
+  }
+
   const baseUrl = getPermittedBaseUrl();
   const accessToken = await getPayPalAccessToken();
 
   let response: Response;
   try {
     response = await fetch(
-      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`,
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(cleanId)}`,
       {
         method: 'GET',
         headers: {
@@ -823,13 +881,21 @@ export async function remindInvoice(
   invoiceId: string,
   options: { subject?: string; note?: string; sendToInvoicer?: boolean }
 ): Promise<void> {
+  const cleanId = typeof invoiceId === 'string' ? invoiceId.trim() : '';
+  if (!cleanId) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      'Cannot remind invoice: invoiceId must be a non-empty string.'
+    );
+  }
+
   const baseUrl = getPermittedBaseUrl();
   const accessToken = await getPayPalAccessToken();
 
   let response: Response;
   try {
     response = await fetch(
-      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/remind`,
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(cleanId)}/remind`,
       {
         method: 'POST',
         headers: {
@@ -869,13 +935,21 @@ export async function cancelInvoice(
   invoiceId: string,
   options?: { subject?: string; note?: string; sendToRecipient?: boolean }
 ): Promise<void> {
+  const cleanId = typeof invoiceId === 'string' ? invoiceId.trim() : '';
+  if (!cleanId) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      'Cannot cancel invoice: invoiceId must be a non-empty string.'
+    );
+  }
+
   const baseUrl = getPermittedBaseUrl();
   const accessToken = await getPayPalAccessToken();
 
   let response: Response;
   try {
     response = await fetch(
-      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/cancel`,
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(cleanId)}/cancel`,
       {
         method: 'POST',
         headers: {
@@ -917,13 +991,21 @@ export async function generateInvoiceQrCode(
   width = 300,
   height = 300
 ): Promise<string> {
+  const cleanId = typeof invoiceId === 'string' ? invoiceId.trim() : '';
+  if (!cleanId) {
+    throw new PayPalError(
+      'PAYPAL_API_REJECTED',
+      'Cannot generate invoice QR code: invoiceId must be a non-empty string.'
+    );
+  }
+
   const baseUrl = getPermittedBaseUrl();
   const accessToken = await getPayPalAccessToken();
 
   let response: Response;
   try {
     response = await fetch(
-      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}/generate-qr-code`,
+      `${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(cleanId)}/generate-qr-code`,
       {
         method: 'POST',
         headers: {
