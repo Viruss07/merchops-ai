@@ -539,6 +539,8 @@ export async function createDraftInvoice(
   const givenName = nameParts[0] || 'Customer';
   const surname = nameParts.slice(1).join(' ') || 'Recipient';
 
+  const formattedAmount = centsToPayPalAmount(input.amountCents);
+
   const payload = {
     detail: {
       invoice_number: input.invoiceNumber,
@@ -567,13 +569,19 @@ export async function createDraftInvoice(
         quantity: '1',
         unit_amount: {
           currency_code: input.currency || 'USD',
-          value: centsToPayPalAmount(input.amountCents),
+          value: formattedAmount,
         },
       },
     ],
     amount: {
       currency_code: input.currency || 'USD',
-      value: centsToPayPalAmount(input.amountCents),
+      value: formattedAmount,
+      breakdown: {
+        item_total: {
+          currency_code: input.currency || 'USD',
+          value: formattedAmount,
+        },
+      },
     },
   };
 
@@ -613,6 +621,40 @@ export async function createDraftInvoice(
         });
       }
     }
+
+    // If duplicate invoice number, retry with unique short suffix
+    if (response.status === 422) {
+      const errClone = response.clone();
+      try {
+        const errJson = (await errClone.json()) as Record<string, unknown>;
+        const isDuplicate =
+          Array.isArray(errJson.details) &&
+          errJson.details.some(
+            (d: unknown) =>
+              typeof d === 'object' &&
+              d !== null &&
+              (d as Record<string, unknown>).issue === 'DUPLICATE_INVOICE_NUMBER'
+          );
+        if (isDuplicate) {
+          const uniqueNumber = `${input.invoiceNumber.slice(0, 18)}-${Date.now().toString().slice(-4)}`;
+          payload.detail.invoice_number = uniqueNumber;
+          response = await fetch(`${baseUrl}/v2/invoicing/invoices`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              'PayPal-Request-Id': `inv-create-${uniqueNumber}`,
+              Accept: 'application/json',
+            },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(PAYOUT_REQUEST_TIMEOUT_MS),
+            cache: 'no-store',
+          });
+        }
+      } catch {
+        // proceed to normal error handler
+      }
+    }
   } catch {
     throw new PayPalError(
       'PAYPAL_OUTCOME_UNKNOWN',
@@ -624,11 +666,23 @@ export async function createDraftInvoice(
     let paypalName: string | undefined;
     let paypalMessage: string | undefined;
     let paypalDebugId: string | undefined;
+    let detailDescription = '';
     try {
       const errBody = (await response.json()) as Record<string, unknown>;
       paypalName = typeof errBody.name === 'string' ? errBody.name : undefined;
       paypalMessage = typeof errBody.message === 'string' ? errBody.message : undefined;
       paypalDebugId = typeof errBody.debug_id === 'string' ? errBody.debug_id : undefined;
+      if (Array.isArray(errBody.details) && errBody.details.length > 0) {
+        detailDescription = errBody.details
+          .map((d: unknown) =>
+            typeof d === 'object' && d !== null
+              ? (d as Record<string, unknown>).description ||
+                (d as Record<string, unknown>).issue
+              : ''
+          )
+          .filter(Boolean)
+          .join('; ');
+      }
     } catch {
       paypalName = undefined;
     }
@@ -636,7 +690,7 @@ export async function createDraftInvoice(
     const message =
       response.status === 403
         ? 'PayPal Invoicing rejected with HTTP 403 (NOT_AUTHORIZED): The Sandbox REST App lacks Invoicing permissions. Enable "Invoicing" under App Settings in developer.paypal.com.'
-        : `PayPal Invoicing creation rejected with status HTTP ${response.status}${paypalName ? ` (${paypalName})` : ''}${paypalMessage ? `: ${paypalMessage}` : ''}.`;
+        : `PayPal Invoicing creation rejected with status HTTP ${response.status}${paypalName ? ` (${paypalName})` : ''}: ${detailDescription || paypalMessage || 'Schema or validation failure'}.`;
 
     throw new PayPalError(
       'PAYPAL_API_REJECTED',
