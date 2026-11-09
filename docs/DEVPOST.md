@@ -7,7 +7,7 @@
 ## 1. Project Overview
 
 ### The Problem
-Cash flow insolvency causes 82% of small business failures. Merchants constantly struggle with late customer invoices while vendor supplier bills mature unpredictably. Autonomous AI tools promise to help, but giving an LLM direct access to move money is catastrophic: models miss transaction fees, fall for prompt injections, and hallucinate amounts.
+Running out of cash is one of the most common reasons small businesses fail, and it usually shows up on a specific day: a supplier bill lands before a late customer pays. Merchants constantly struggle with late customer invoices while vendor supplier bills mature unpredictably. Autonomous AI tools promise to help, but giving an LLM direct access to move money is catastrophic: models miss transaction fees, fall for prompt injections, and hallucinate amounts.
 
 ### The Solution: MerchOps AI
 MerchOps AI couples **predictive AI intelligence** with a **deterministic financial safety engine**:
@@ -23,14 +23,14 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 
 - **Application**: Next.js 15 App Router, TypeScript, React 19, Tailwind CSS.
 - **Institutional Tables**: AG Grid Community with custom theme.
-- **Persistence & Integrity**: PostgreSQL (Render / Neon) with append-only ledger (`balance = SUM(amount_cents)`) and database triggers that reject `UPDATE` and `DELETE` on financial logs.
-- **Concurrency Protection**: PostgreSQL transaction-level advisory locks (`pg_advisory_xact_lock`) ensuring zero double-spend under concurrent requests.
+- **Persistence**: the demo runs on an in-memory store. A Postgres schema with append-only triggers on audit and ledger, a `webhook_events` dedupe table, and a `PgRepository` with advisory locks is written, but not yet wired into the routes.
+- **Concurrency & retries**: a bill state machine (a second authorization on an in-flight bill is refused) plus a deterministic `PayPal-Request-Id`, so a retried click can't pay twice.
 - **PayPal APIs**: 
   - OAuth 2.0 Client Credentials with token caching & strict origin lockdown (`https://api-m.sandbox.paypal.com`)
   - Invoicing v2 (`createDraft`, `send`, `get`, `remind`, `cancel`, `QR`)
   - Payouts v1 (`createPayoutBatch`, `getPayoutBatch`, `getPayoutItem`)
   - Webhooks v1 with cryptographic signature verification (`POST /v1/notifications/verify-webhook-signature`)
-- **AI Models & Defense**: OpenRouter free-tier fallback chain (`meta-llama/llama-3.3-70b-instruct:free` -> `deepseek/deepseek-r1:free` -> `qwen/qwen-2.5-coder-32b-instruct:free`), prompt injection spotlight isolation, and placeholder-grounded narrative validation.
+- **AI Models & Defense**: OpenRouter free-model fallback chain (`recursive/flint-v1.0:free` -> `dots-studio/dots-3-note-preview:free` -> `nvidia/nemotron-3.5-super-vl:free`). The model's JSON plans are parsed against a closed action schema, grounded (no invented dollar figures), and re-simulated by the deterministic validator; prompt-injection spotlighting on customer and vendor text.
 
 ---
 
@@ -43,9 +43,9 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 - **1:00 – 1:40 | Cash Plan Copilot: Rules Reject the Unsafe Plan**  
   *Visual*: Open AI Cash Plans. Show the three side-by-side plans. Point out that the "Lowest Cost" plan attempted immediate full disbursement without collections: the deterministic rule engine rejected it with `RULE_RESERVE_FLOOR_BREACH`. Show the merchant approving the "Safest" plan.
 - **1:40 – 2:20 | Real PayPal Payout Settlement**  
-  *Visual*: Go to Payouts. Open Two-Step Authorization for Nexus Cloud ($400.00). Point out the fee calculation (+$1.00 fee included in reserve check) and deterministic `PayPal-Request-Id`. Confirm payout. Watch batch ID and item ID reach terminal `SUCCESS`.
+  *Visual*: Go to Payouts. Open Two-Step Authorization for Nexus Cloud ($400.00). Point out the fee calculation (+$1.00 fee included in reserve check) and deterministic `PayPal-Request-Id`. Confirm payout. Show the batch id, and that settlement is decided by the item status, not the batch status.
 - **2:20 – 2:50 | The Guardrail Bench & Agentic MCP**  
-  *Visual*: Navigate to `/bench`. Showcase the 12 adversarial traps where autonomous LLMs failed 12/12 while MerchOps Guardrails protected 100% of capital ($24,526 protected). Briefly show Claude Desktop connected via MCP staging proposals without money-moving capability.
+  *Visual*: Navigate to `/bench`. Show the 12 attacks executed live on page load against the real guard code: 12/12 blocked, each with the guard's own output. Briefly show Claude Desktop connected via MCP staging proposals without money-moving capability.
 - **2:50 – 3:00 | Conclusion**  
   *Closing message*: "MerchOps AI: An AI CFO that can't touch your money. Proven safe, verified on PayPal, built for resilient commerce."
 
@@ -53,9 +53,9 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 
 ## 4. Verification Evidence & Sandbox Credentials
 
-- **Live URL**: Provided in submission
+- **Live URL**: add the Render URL
 - **Sandbox Base**: `https://api-m.sandbox.paypal.com`
-- **Customer Sandbox Email (Payer)**: `buyer@personal.example.com`
-- **Vendor Sandbox Email (Receiver)**: `vendor@personal.example.com`
+- **Payer**: any PayPal sandbox Personal account (judges can create one in their developer dashboard)
+- **Receiver**: the vendor email on the Nexus Cloud bill (a sandbox Personal account)
 - **Audit & Proof**: All real transaction IDs, batch IDs, and webhook logs are visible on the dashboard in monospace with 1-click copy.
 

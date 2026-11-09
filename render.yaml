@@ -34,7 +34,11 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: meta-llama/llama-3.3-70b-instruct:free
+        value: recursive/flint-v1.0:free
+      - key: AI_MODEL_FALLBACK
+        value: dots-studio/dots-3-note-preview:free
+      - key: AI_MODEL_FALLBACK_2
+        value: nvidia/nemotron-3.5-super-vl:free
 
 databases:
   - name: merchops-db

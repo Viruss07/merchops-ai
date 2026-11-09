@@ -51,6 +51,20 @@ function checkDailyCap(maxDaily = 100): boolean {
   return true;
 }
 
+/**
+ * Model fallback chain: primary -> fallback 1 -> fallback 2, each overridable by env.
+ * Defaults are OpenRouter free models with JSON output, checked against
+ * https://openrouter.ai/api/v1/models on 2026-11-09. Free models are added and
+ * removed without notice, so a 404 simply falls through to the next one.
+ */
+export function getModelChain(): string[] {
+  return [
+    process.env.OPENROUTER_MODEL || 'recursive/flint-v1.0:free',
+    process.env.AI_MODEL_FALLBACK || 'dots-studio/dots-3-note-preview:free',
+    process.env.AI_MODEL_FALLBACK_2 || 'nvidia/nemotron-3.5-super-vl:free',
+  ];
+}
+
 export function computePromptHash(messages: AiChatMessage[]): string {
   const repr = JSON.stringify(messages);
   return crypto.createHash('sha256').update(repr).digest('hex').slice(0, 32);
@@ -92,12 +106,7 @@ export async function executeAiInference(options: AiInferenceOptions): Promise<A
     throw new AiClientError('AI_DAILY_CAP_REACHED', `Daily AI proposal cap (${maxCap}) reached.`);
   }
 
-  // Model fallback chain: primary -> fallback 1 -> fallback 2
-  const models = [
-    process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free',
-    process.env.AI_MODEL_FALLBACK || 'deepseek/deepseek-r1:free',
-    process.env.AI_MODEL_FALLBACK_2 || 'qwen/qwen-2.5-coder-32b-instruct:free',
-  ];
+  const models = getModelChain();
 
   let lastError: Error | null = null;
 
@@ -119,7 +128,7 @@ export async function executeAiInference(options: AiInferenceOptions): Promise<A
           max_tokens: options.maxTokens ?? 1500,
           response_format: options.jsonMode ? { type: 'json_object' } : undefined,
         }),
-        signal: AbortSignal.timeout(15000), // 15s timeout
+        signal: AbortSignal.timeout(25000), // free models can take ~20s for JSON
       });
 
       if (!response.ok) {

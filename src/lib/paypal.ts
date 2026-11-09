@@ -57,9 +57,13 @@ export function clearPayPalTokenCache(): void {
 }
 
 function getPermittedBaseUrl(): string {
-  const configured =
-    process.env.PAYPAL_API_BASE_URL?.trim() || PERMITTED_SANDBOX_ORIGIN;
+  return assertPermittedBaseUrl(
+    process.env.PAYPAL_API_BASE_URL?.trim() || PERMITTED_SANDBOX_ORIGIN
+  );
+}
 
+/** Throws PAYPAL_ENDPOINT_INVALID for anything but the exact sandbox origin. */
+export function assertPermittedBaseUrl(configured: string): string {
   let parsed: URL;
   try {
     parsed = new URL(configured);
@@ -289,6 +293,17 @@ export async function dispatchPayout(
       paypalName = undefined;
     }
 
+    // A 5xx or 429 does not prove the batch was not created. Treat it as an
+    // unknown outcome so the payout stays reserved until a sync resolves it,
+    // instead of releasing funds and telling the merchant nothing moved.
+    if (response.status >= 500 || response.status === 429) {
+      throw new PayPalError(
+        'PAYPAL_OUTCOME_UNKNOWN',
+        `PayPal Payouts API returned HTTP ${response.status}; the batch may or may not exist. Sync before retrying.`,
+        { status: response.status, paypalName }
+      );
+    }
+
     throw new PayPalError(
       'PAYPAL_API_REJECTED',
       `PayPal Payouts API rejected the request with status HTTP ${response.status}.`,
@@ -361,14 +376,17 @@ export function parsePayoutBatch(payload: unknown): ParsedPayoutBatch {
     }
   }
 
+  // Settlement is decided by item transaction_status only. A batch_status of
+  // SUCCESS means PayPal finished processing the batch, not that the money
+  // arrived: items can still be UNCLAIMED, ONHOLD or PENDING. Those stay PENDING.
   let outcome: PayoutBatchOutcome = 'PENDING';
-  if (batchStatus === 'SUCCESS' || itemStatuses.includes('SUCCESS')) {
-    outcome = 'SUCCESS';
-  } else if (
+  if (
     (batchStatus !== null && FAILED_BATCH_STATUSES.has(batchStatus)) ||
     itemStatuses.some((status) => FAILED_ITEM_STATUSES.has(status))
   ) {
     outcome = 'FAILED';
+  } else if (itemStatuses.length > 0 && itemStatuses.every((status) => status === 'SUCCESS')) {
+    outcome = 'SUCCESS';
   }
 
   return { batchId, batchStatus, itemStatuses, outcome };

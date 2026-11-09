@@ -68,17 +68,15 @@ function classifyEvent(
 ): 'PAYOUT_SUCCESS' | 'PAYOUT_FAILED' | 'INVOICE_PAID' | 'IGNORE' {
   const upper = eventType.toUpperCase();
 
-  if (
-    upper === 'INVOICING.INVOICE.PAID' ||
-    upper === 'PAYMENT.CAPTURE.COMPLETED'
-  ) {
+  // Only the invoice-level event: a bare PAYMENT.CAPTURE.COMPLETED can belong to
+  // any checkout on the account and must never credit one of our invoices.
+  if (upper === 'INVOICING.INVOICE.PAID') {
     return 'INVOICE_PAID';
   }
 
-  if (
-    upper === 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED' ||
-    upper === 'PAYMENT.PAYOUTSBATCH.SUCCESS'
-  ) {
+  // Item-level only. PAYMENT.PAYOUTSBATCH.SUCCESS means PayPal finished
+  // *processing* the batch; items inside it can still be UNCLAIMED or ONHOLD.
+  if (upper === 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED') {
     return 'PAYOUT_SUCCESS';
   }
 
@@ -149,12 +147,8 @@ export async function POST(req: NextRequest) {
     if (!invoice && invoiceNumber) {
       invoice = demoStore.getInvoiceByNumber(invoiceNumber);
     }
-    // Fallback for single-tenant demo if IDs were not persisted across restart
-    if (!invoice) {
-      const allInvoices = demoStore.getInvoices();
-      invoice = allInvoices.find((i) => i.status !== 'PAID');
-    }
-
+    // No guessing: an event we cannot tie to one of our invoices by PayPal id or
+    // invoice number is acknowledged (so PayPal stops retrying) but never credited.
     if (!invoice) {
       return NextResponse.json({
         received: true,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { demoStore } from '@/lib/store';
 import { formatCentsToUSD } from '@/lib/money';
+import { getModelChain } from '@/lib/ai/client';
 import {
   getClientIp,
   jsonError,
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+  const model = getModelChain()[0];
   const siteUrl = process.env.OPENROUTER_SITE_URL || 'http://localhost:3000';
   const siteName = process.env.OPENROUTER_SITE_NAME || 'MerchOps AI';
 

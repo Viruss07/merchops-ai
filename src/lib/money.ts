@@ -106,8 +106,9 @@ export function centsToPayPalAmount(cents: number): string {
 }
 
 /**
- * Calculates standard US domestic PayPal Payout fee in integer cents:
- * 2% of transaction amount, minimum $0.25 (25 cents), maximum $1.00 (100 cents).
+ * Conservative US PayPal payout fee estimate, in integer cents. PayPal publishes two
+ * US schedules: 2% capped at $1.00, and a flat $0.25 per payment via the Payouts API.
+ * We reserve the higher of the two, so the reserve check can only over-estimate the fee.
  */
 export function calculatePayoutFeeCents(amountCents: number): number {
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {

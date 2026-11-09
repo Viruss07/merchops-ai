@@ -9,7 +9,7 @@
 > - **Runway Engine**: IMPLEMENTED & unit-tested (deterministic integer cents, deterministic `DEMO_AS_OF` clock).
 > - **Collections Workflow**: IMPLEMENTED (OpenRouter reminder drafting with honest fallback, server-side reminder approval, payment simulation). No outbound email.
 > - **Payouts Engine**: IMPLEMENTED (two-step approval, reserve floor guardrail, in-process payout lifecycle, deterministic `PayPal-Request-Id`, batch polling, verified webhook receiver, strict Sandbox URL lockdown, simulation rail default). Live Sandbox settlement is implemented but **unverified** and gated behind `PAYPAL_PAYOUTS_ENABLED=true`.
-> - **Persistence**: IN-MEMORY repository. There is **no PostgreSQL and no authentication/tenant guard**. The webhook receiver and its deduplication state are in-memory and reset on restart.
+> - **Persistence**: IN-MEMORY at runtime, with no authentication or tenant guard. A Postgres schema (`db/migrations/`) and `PgRepository` exist but are not yet wired into the routes.
 > - **Audit Trail**: In-memory array with UUID IDs. It is **not immutable**.
 
 ---
@@ -193,7 +193,7 @@ flowchart TD
   4. On missing key, timeout, or invalid JSON, a deterministic fallback template is returned and honestly labelled.
   5. The merchant edits/reviews the draft in the UI.
   6. Approval is persisted server-side at `POST /api/reminders/approve` with a UUID audit entry. No outbound email is sent.
-- **No live invoicing**: payment links are simulated; PayPal Invoicing/Orders APIs are **not implemented**.
+- **Invoicing**: real PayPal Invoicing v2 (create, send, get, remind) when sandbox keys are set; otherwise collections use the simulated payment step.
 
 ### 2.3 Payouts Engine (Reserve-Safe AP) — IMPLEMENTED
 

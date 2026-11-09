@@ -68,7 +68,7 @@ The scenario runs on a deterministic clock: `DEMO_AS_OF` defaults to **2026-11-0
 2. **Click "Draft Reminder"**:
    - The slide-over drawer opens.
    - An AI-tailored reminder email is presented, customized for a 12-day overdue invoice.
-   - It references the invoice number (`INV-2026-089`), exact amount (`$1,500.00`), and includes a **simulated** PayPal checkout link (live Invoicing/Orders integration is not implemented).
+   - It references the invoice number (`INV-2026-089`), exact amount (`$1,500.00`), and includes the PayPal payer link (a real Invoicing v2 `recipient_view_url` once the invoice is created with sandbox keys; a simulated link otherwise).
 3. **Show Merchant Oversight**:
    - Edit the draft subject or body to demonstrate full merchant editing control.
    - Click **"Approve Reminder Draft"**.

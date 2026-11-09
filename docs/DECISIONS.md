@@ -72,7 +72,7 @@ This document records the architectural and design decisions made for MerchOps A
 - **Decision**:
   - **Framework**: Next.js App Router (React Server Components + Route Handlers). **Implemented.**
   - **Language**: TypeScript with strict mode. **Implemented.**
-  - **Database**: PostgreSQL (relational integrity, foreign keys, transaction isolation). **Planned — not implemented.**
+  - **Database**: PostgreSQL (relational integrity, foreign keys, transaction isolation). **Schema and repository written (`db/migrations/`, `PgRepository`); the routes still use the in-memory store.**
   - **Deployment**: Render (web service + managed PostgreSQL). **Planned — not configured in this repository.**
 - **Consequences**:
   - End-to-end type safety from route handler to UI component.

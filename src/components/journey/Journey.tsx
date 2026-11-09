@@ -9,7 +9,7 @@ import {
   ShieldAlert,
   ShieldCheck,
 } from 'lucide-react';
-import { formatCentsToUSD } from '@/lib/money';
+import { calculatePayoutFeeCents, formatCentsToUSD } from '@/lib/money';
 import {
   ApiError,
   authorizePayout,
@@ -193,7 +193,10 @@ export function Journey({
 
   const safest = proposals?.plans.find((plan) => plan.id === 'safest') ?? proposals?.plans[0];
   const allAccepted = proposals?.plans.every((plan) => plan.verdict === 'ACCEPTED') ?? false;
-  const sourceLabel = proposals?.source === 'OPENROUTER_AI' ? 'OpenRouter' : 'Deterministic rules';
+  const sourceLabel =
+    proposals?.source === 'OPENROUTER_AI'
+      ? `AI · ${proposals.model}`
+      : 'Fallback templates · AI offline';
 
   const stamp = blocked
     ? {
@@ -320,12 +323,17 @@ export function Journey({
               <div className="mt-4 overflow-hidden rounded-lg border border-rule bg-panel">
                 <div className="flex items-center justify-between border-b border-rule px-4 py-2.5">
                   <span className="text-sm font-medium">Proposal</span>
-                  <span className="mono text-[10px] text-ink-3">{sourceLabel}</span>
+                  <span
+                    className="mono max-w-[60%] truncate text-[10px] text-ink-3"
+                    title={proposals?.fallbackReason ?? proposals?.model}
+                  >
+                    {sourceLabel}
+                  </span>
                 </div>
                 {proposalLoading ? (
                   <div className="flex items-center gap-2 px-4 py-6 text-xs text-ink-3">
                     <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                    Reading the deterministic runway…
+                    Asking the model for plans, then checking each against the runway…
                   </div>
                 ) : proposalError ? (
                   <div className="px-4 py-4 text-xs text-blocked">
@@ -358,7 +366,13 @@ export function Journey({
                         ) : (
                           <span>No breach</span>
                         )}
+                        <span className="mono">{plan.origin === 'AI' ? 'Written by AI' : 'Fallback template'}</span>
                       </div>
+                      {plan.assumptions.length > 0 && (
+                        <p className="mt-1 text-[11px] text-ink-3">
+                          Assumes: {plan.assumptions.join(' ')}
+                        </p>
+                      )}
                     </div>
                   ))
                 )}
@@ -380,9 +394,11 @@ export function Journey({
                   <p className="text-xs font-semibold">Rules decided</p>
                 </div>
                 <p className="mt-1 text-[11px] leading-relaxed text-ink-2">
-                  {safest?.rulesFailed[0] ??
-                    safest?.narrative ??
-                    'Waiting for the deterministic verdict.'}
+                  {proposals
+                    ? `${proposals.plans.filter((p) => p.verdict === 'ACCEPTED').length} of ${proposals.plans.length} plans pass. ${
+                        safest?.rulesFailed[0] ?? safest?.rulesPassed[safest.rulesPassed.length - 1] ?? ''
+                      }`
+                    : 'Waiting for the deterministic verdict.'}
                 </p>
               </div>
 
@@ -427,7 +443,12 @@ export function Journey({
                   <p className="money mt-2 text-3xl font-semibold text-blocked">
                     {formatCentsToUSD(blocked.deficitCents)} short
                   </p>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-2">{blocked.message}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-2">
+                    {blocked.message}
+                    {acmeBill
+                      ? ` Includes the ${formatCentsToUSD(calculatePayoutFeeCents(acmeBill.amountCents))} estimated PayPal payout fee, so the fee can never be what breaks the floor.`
+                      : ''}
+                  </p>
                   <p className="mono mt-2 text-[10px] text-ink-3">403 · RESERVE_BREACH_BLOCKED</p>
                 </div>
               ) : (

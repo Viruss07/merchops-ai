@@ -31,6 +31,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
   const [invoiceId, setInvoiceId] = useState<string | null>(null);
   const [recipientViewUrl, setRecipientViewUrl] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [payoutStatus, setPayoutStatus] = useState<'DISBURSED' | 'IN_FLIGHT' | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -61,9 +62,16 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
     setLoading(true);
     setError(null);
     try {
-      await syncInvoices();
-      setStep('INVOICE_SETTLED');
+      const res = await syncInvoices('inv-apex-01');
       await onRefreshState();
+      const apex = res.snapshot.invoices.find((inv) => inv.id === 'inv-apex-01');
+      if (apex?.status === 'PAID') {
+        setStep('INVOICE_SETTLED');
+      } else {
+        setError(
+          'PayPal does not report this invoice as paid yet. Pay it through the customer link with a sandbox personal account, then sync again.'
+        );
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Sync failed.');
     } finally {
@@ -79,7 +87,8 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
         billId: 'bill-cloud-02',
         executionMode: 'PAYPAL_SANDBOX',
       });
-      setBatchId(res.batchId ?? 'BATCH-SANDBOX-LIVE');
+      setBatchId(res.batchId ?? null);
+      setPayoutStatus(res.status);
       setStep('PAYOUT_DISPATCHED');
       await onRefreshState();
     } catch (err: unknown) {
@@ -91,7 +100,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) onClose();
       }}
@@ -100,19 +109,19 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
         role="dialog"
         aria-modal="true"
         aria-labelledby="run-live-title"
-        className="w-full max-w-lg my-auto rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-rule bg-panel"
       >
         {/* Header */}
-        <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between bg-slate-50">
+        <div className="flex items-center justify-between border-b border-rule bg-paper px-5 py-4 sm:px-6">
           <div className="flex items-center space-x-2.5">
-            <div className="rounded-xl bg-blue-600 p-2 text-white">
+            <div className="rounded-md bg-ink p-2 text-panel">
               <Play className="h-5 w-5 fill-current" />
             </div>
             <div>
-              <h2 id="run-live-title" className="text-base font-bold text-slate-900">
+              <h2 id="run-live-title" className="text-base font-semibold text-ink">
                 Run It Live on PayPal Sandbox
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-ink-2">
                 1-Click end-to-end verified money flow for judges
               </p>
             </div>
@@ -121,28 +130,29 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition"
+            aria-label="Close run it live dialog"
+            className="rounded-md p-1.5 text-ink-3 transition-colors duration-200 hover:bg-rule hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-6">
+        <div className="min-h-0 space-y-5 overflow-y-auto p-5 sm:p-6">
           {error && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800 space-y-2">
-              <div className="flex items-start space-x-2">
-                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-                <span className="font-medium">{error}</span>
+            <div className="space-y-2 rounded-lg border border-blocked bg-blocked-field p-3.5 text-xs text-blocked">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-blocked" />
+                <span>{error}</span>
               </div>
               {error.includes('403') || error.includes('NOT_AUTHORIZED') ? (
-                <div className="mt-1 rounded-lg bg-rose-100/70 p-2 text-[11px] text-rose-900 border border-rose-200">
-                  <strong>💡 How to enable:</strong> Log in to{' '}
+                <div className="rounded-md border border-blocked p-2 text-[11px]">
+                  <strong>How to enable:</strong> Log in to{' '}
                   <a
                     href="https://developer.paypal.com/dashboard/applications/sandbox"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline font-bold"
+                    className="underline font-semibold"
                   >
                     developer.paypal.com
                   </a>{' '}
@@ -156,38 +166,38 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
           <div className="space-y-4">
             {/* Step 1: Invoicing */}
             <div
-              className={`rounded-xl border p-4 transition ${
-                step === 'IDLE' ? 'border-blue-400 bg-blue-50/50' : 'border-slate-200 bg-white'
+              className={`rounded-lg border p-4 transition-colors duration-200 ${
+                step === 'IDLE' ? 'border-focus bg-paper' : 'border-rule bg-panel'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">
+                <span className="text-xs font-semibold text-ink">
                   Step 1: Create Real PayPal Sandbox Invoice
                 </span>
                 {invoiceId && (
-                  <span className="inline-flex items-center space-x-1 text-emerald-700 text-xs font-bold">
+                  <span className="inline-flex items-center space-x-1 text-xs font-semibold text-safe">
                     <CheckCircle2 className="h-4 w-4" />
                     <span>Created</span>
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="mt-1 text-xs text-ink-2">
                 Creates an active invoice on PayPal Invoicing v2 for Apex Corp ($1,500.00).
               </p>
 
               {invoiceId && (
-                <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-1.5 font-mono text-xs">
-                  <div className="flex items-center justify-between text-slate-600">
+                <div className="mt-3 space-y-1.5 rounded-md border border-rule bg-paper p-2.5 font-mono text-xs">
+                  <div className="flex items-center justify-between text-ink-3">
                     <span>Invoice ID:</span>
                     <div className="flex items-center space-x-1">
-                      <span className="font-bold text-slate-900">{invoiceId}</span>
+                      <span className="font-semibold text-ink">{invoiceId}</span>
                       <button
                         type="button"
                         onClick={() => handleCopy(invoiceId, 'inv')}
-                        className="p-1 hover:text-slate-900"
+                        className="p-1 text-ink-3 transition-colors duration-200 hover:text-ink"
                       >
                         {copiedKey === 'inv' ? (
-                          <Check className="h-3 w-3 text-emerald-600" />
+                          <Check className="h-3 w-3 text-safe" />
                         ) : (
                           <Copy className="h-3 w-3" />
                         )}
@@ -200,7 +210,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                         href={recipientViewUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition"
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-panel transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                       >
                         <span>Open Customer Pay Link</span>
                         <ExternalLink className="h-3.5 w-3.5" />
@@ -215,7 +225,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                   type="button"
                   onClick={handleCreateLiveInvoice}
                   disabled={loading}
-                  className="mt-3 w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-blue-700 transition"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-ink px-3 py-2 text-xs font-semibold text-panel transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -229,24 +239,22 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
 
             {/* Step 2: Settle Invoice */}
             <div
-              className={`rounded-xl border p-4 transition ${
-                step === 'INVOICE_CREATED'
-                  ? 'border-blue-400 bg-blue-50/50'
-                  : 'border-slate-200 bg-white'
+              className={`rounded-lg border p-4 transition-colors duration-200 ${
+                step === 'INVOICE_CREATED' ? 'border-focus bg-paper' : 'border-rule bg-panel'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">
+                <span className="text-xs font-semibold text-ink">
                   Step 2: Confirm Payment & Watch Runway Flip Green
                 </span>
                 {step === 'INVOICE_SETTLED' || step === 'PAYOUT_DISPATCHED' ? (
-                  <span className="inline-flex items-center space-x-1 text-emerald-700 text-xs font-bold">
+                  <span className="inline-flex items-center space-x-1 text-xs font-semibold text-safe">
                     <CheckCircle2 className="h-4 w-4" />
                     <span>Settled</span>
                   </span>
                 ) : null}
               </div>
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="mt-1 text-xs text-ink-2">
                 Once paid via the customer link, sync reconciliation clears the cash and eliminates
                 the Day-10 runway deficit.
               </p>
@@ -256,7 +264,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                   type="button"
                   onClick={handleConfirmSettlement}
                   disabled={loading}
-                  className="mt-3 w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-emerald-700 transition"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-ink px-3 py-2 text-xs font-semibold text-panel transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -270,40 +278,43 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
 
             {/* Step 3: Outbound Payout */}
             <div
-              className={`rounded-xl border p-4 transition ${
-                step === 'INVOICE_SETTLED'
-                  ? 'border-blue-400 bg-blue-50/50'
-                  : 'border-slate-200 bg-white'
+              className={`rounded-lg border p-4 transition-colors duration-200 ${
+                step === 'INVOICE_SETTLED' ? 'border-focus bg-paper' : 'border-rule bg-panel'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">
-                  Step 3: Authorize Real $1.00 Payout
+                <span className="text-xs font-semibold text-ink">
+                  Step 3: Pay Nexus Cloud $400.00 via PayPal Payouts
                 </span>
-                {batchId && (
-                  <span className="inline-flex items-center space-x-1 text-emerald-700 text-xs font-bold">
+                {payoutStatus && (
+                  <span
+                    className={`inline-flex items-center space-x-1 text-xs font-semibold ${
+                      payoutStatus === 'DISBURSED' ? 'text-safe' : 'text-ink-2'
+                    }`}
+                  >
                     <CheckCircle2 className="h-4 w-4" />
-                    <span>Disbursed</span>
+                    <span>{payoutStatus === 'DISBURSED' ? 'Settled' : 'Accepted · awaiting settlement'}</span>
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-600 mt-1">
-                Dispatches an authorized vendor payout to POST /v1/payments/payouts with
-                deterministic request ID and fee checking.
+              <p className="mt-1 text-xs text-ink-2">
+                POST /v1/payments/payouts with a deterministic PayPal-Request-Id. The reserve check
+                includes the estimated $1.00 PayPal fee. Settlement is confirmed per item by
+                webhook or sync, never assumed from the batch.
               </p>
 
               {batchId && (
-                <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-mono text-xs flex items-center justify-between">
-                  <span className="text-slate-600">Batch ID:</span>
+                <div className="mt-3 flex items-center justify-between rounded-md border border-rule bg-paper p-2.5 font-mono text-xs">
+                  <span className="text-ink-3">Batch ID:</span>
                   <div className="flex items-center space-x-1">
-                    <span className="font-bold text-slate-900">{batchId}</span>
+                    <span className="font-semibold text-ink">{batchId}</span>
                     <button
                       type="button"
                       onClick={() => handleCopy(batchId, 'batch')}
-                      className="p-1 hover:text-slate-900"
+                      className="p-1 text-ink-3 transition-colors duration-200 hover:text-ink"
                     >
                       {copiedKey === 'batch' ? (
-                        <Check className="h-3 w-3 text-emerald-600" />
+                        <Check className="h-3 w-3 text-safe" />
                       ) : (
                         <Copy className="h-3 w-3" />
                       )}
@@ -317,7 +328,7 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
                   type="button"
                   onClick={handleDispatchLivePayout}
                   disabled={loading}
-                  className="mt-3 w-full inline-flex items-center justify-center space-x-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-indigo-700 transition"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-ink px-3 py-2 text-xs font-semibold text-panel transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -332,14 +343,12 @@ export function RunLiveModal({ isOpen, onClose, onRefreshState }: RunLiveModalPr
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-200 bg-slate-50 px-6 py-3 flex items-center justify-between">
-          <span className="text-[11px] text-slate-500 font-mono">
-            Origin: api-m.sandbox.paypal.com
-          </span>
+        <div className="flex items-center justify-between border-t border-rule bg-paper px-5 py-3 sm:px-6">
+          <span className="font-mono text-[11px] text-ink-3">Origin: api-m.sandbox.paypal.com</span>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-300 transition"
+            className="rounded-md border border-rule-strong bg-panel px-3 py-1.5 text-xs font-medium text-ink-2 transition-colors duration-200 hover:bg-paper focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             Close
           </button>

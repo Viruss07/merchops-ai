@@ -22,7 +22,7 @@ import {
   DEMO_AS_OF,
   PAYPAL_SANDBOX_ENABLED,
 } from '@/lib/config';
-import { isValidCents } from '@/lib/money';
+import { calculatePayoutFeeCents, isValidCents } from '@/lib/money';
 
 export const INITIAL_ACCOUNT: MerchantAccount = {
   id: 'merchant-001',
@@ -382,12 +382,17 @@ export const demoStore = {
     // Reserve in-flight payouts too: otherwise two concurrent payouts can each
     // pass this check against the same cleared balance and jointly breach the
     // reserve when both complete.
+    // Fee-inclusive: each payout reserves its amount plus the estimated PayPal
+    // payout fee, so a fee can never be what pushes the balance under the floor.
     const inFlightCents = storeState.bills
       .filter((b) => b.status === 'IN_FLIGHT' || b.status === 'APPROVED')
-      .reduce((sum, b) => sum + b.amountCents, 0);
+      .reduce((sum, b) => sum + b.amountCents + calculatePayoutFeeCents(b.amountCents), 0);
 
     const postPayoutBalanceCents =
-      storeState.account.clearedBalanceCents - inFlightCents - bill.amountCents;
+      storeState.account.clearedBalanceCents -
+      inFlightCents -
+      bill.amountCents -
+      calculatePayoutFeeCents(bill.amountCents);
     if (postPayoutBalanceCents < storeState.account.minReserveCents) {
       const deficitCents = storeState.account.minReserveCents - postPayoutBalanceCents;
       storeState.auditLogs.unshift({
@@ -666,6 +671,32 @@ export const demoStore = {
     };
     storeState.auditLogs.unshift(newEntry);
     return newEntry;
+  },
+
+  /**
+   * Run `fn` against a fresh seeded copy of the state, then restore the live
+   * state. `fn` must be synchronous: Node runs it to completion before any other
+   * request handler, so the live demo can never observe the scratch state.
+   * Used by the Guardrail Bench to exercise the real store guards.
+   */
+  runIsolated<T>(fn: () => T): T {
+    const saved = {
+      account: storeState.account,
+      invoices: storeState.invoices,
+      bills: storeState.bills,
+      auditLogs: storeState.auditLogs,
+      idempotencyMap: storeState.idempotencyMap,
+    };
+    storeState.account = structuredClone(INITIAL_ACCOUNT);
+    storeState.invoices = structuredClone(createInitialInvoices());
+    storeState.bills = structuredClone(createInitialBills());
+    storeState.auditLogs = [];
+    storeState.idempotencyMap = new Map<string, IdempotencyOutcome>();
+    try {
+      return fn();
+    } finally {
+      Object.assign(storeState, saved);
+    }
   },
 
   resetDemoData(): StateSnapshot {

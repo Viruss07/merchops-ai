@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Play } from 'lucide-react';
-import { getState } from '@/lib/apiClient';
+import { getState, resetDemo } from '@/lib/apiClient';
 import { StateSnapshot } from '@/types';
 import { calculateRunway } from '@/lib/runway';
 import { RunwayView } from '@/components/views/RunwayView';
@@ -11,6 +11,7 @@ import { CollectionsView } from '@/components/views/CollectionsView';
 import { PayoutsView } from '@/components/views/PayoutsView';
 import { AuditView } from '@/components/views/AuditView';
 import { Navigation, TabKey } from '@/components/Navigation';
+import { Navbar } from '@/components/Navbar';
 import { DemoTour } from '@/components/demo/DemoTour';
 import { RunLiveModal } from '@/components/demo/RunLiveModal';
 
@@ -19,6 +20,7 @@ export default function JudgeDemoPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('runway');
   const [runLiveOpen, setRunLiveOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
 
   const loadCurrentState = useCallback(async () => {
     try {
@@ -35,6 +37,16 @@ export default function JudgeDemoPage() {
     void loadCurrentState();
   }, [loadCurrentState]);
 
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await resetDemo();
+      await loadCurrentState();
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const forecast = snapshot
     ? calculateRunway({
         clearedBalanceCents: snapshot.account.clearedBalanceCents,
@@ -48,46 +60,54 @@ export default function JudgeDemoPage() {
 
   if (loading || !snapshot || !forecast) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center space-y-2">
-          <div className="h-8 w-8 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mx-auto" />
-          <p className="text-xs font-semibold text-slate-600">Loading Judge Mode...</p>
+      <div className="flex min-h-screen items-center justify-center bg-paper">
+        <div className="space-y-2 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-ink-3 border-t-transparent motion-reduce:animate-none" />
+          <p className="text-xs font-medium text-ink-2">Loading judge mode…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
-      {/* Top Banner: Judge Mode Strip */}
-      <div className="bg-indigo-900 text-white px-4 py-2.5 text-xs">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center space-x-2">
-            <span className="rounded bg-indigo-700 text-indigo-100 font-mono font-bold px-2 py-0.5 uppercase text-[10px]">
-              Judge Evaluation Mode
+    <div className="min-h-screen bg-paper pb-20 text-ink">
+      <h1 className="sr-only">MerchOps AI judge mode</h1>
+      <Navbar
+        account={snapshot.account}
+        capabilities={snapshot.capabilities}
+        onReset={handleReset}
+        resetting={resetting}
+      />
+
+      <div className="border-b border-rule bg-panel">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-2.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex items-center gap-2">
+            <span className="rounded border border-rule bg-rule px-2 py-0.5 text-[10px] font-semibold text-ink-2">
+              Judge mode
             </span>
-            <span className="font-medium text-indigo-100">
-              PayPal AI Hackathon 2026 &bull; Guided Tour Active
-            </span>
+            <span className="text-ink-3">PayPal AI Hackathon 2026 · guided tour</span>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => setRunLiveOpen(true)}
-              className="inline-flex items-center space-x-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 px-3 py-1 text-xs font-bold text-white shadow transition active:scale-95"
+              className="inline-flex items-center gap-1.5 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-panel transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
             >
-              <Play className="h-3 w-3 fill-current" />
-              <span>Run it Live (1-Click)</span>
+              <Play className="h-3 w-3 fill-current" aria-hidden="true" />
+              Run it live
             </button>
-            <Link href="/bench" className="text-indigo-200 hover:text-white underline font-semibold">
-              View Guardrail Bench
+            <Link
+              href="/bench"
+              className="font-medium text-ink-2 underline underline-offset-2 transition-colors duration-200 hover:text-ink"
+            >
+              Guardrail bench
             </Link>
           </div>
         </div>
       </div>
 
       {/* Navigation Strip */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
         <Navigation
           activeTab={activeTab}
           onChangeTab={setActiveTab}
@@ -101,7 +121,7 @@ export default function JudgeDemoPage() {
       </div>
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
         {activeTab === 'runway' && (
           <RunwayView
             account={snapshot.account}

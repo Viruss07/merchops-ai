@@ -10,19 +10,18 @@ This guide explains how to configure the PayPal Developer Sandbox for MerchOps A
 
 In accordance with our financial and security rules, we separate documented external platform behavior from verified codebase capabilities.
 
-| Rail / Capability | Status | Implementation Details |
+| Rail / Capability | Status | Where |
 |---|---|---|
-| **OAuth 2.0 Token Cache** | **[VERIFIED]** | Client Credentials grant (`POST /v1/oauth2/token`) with in-memory caching and proactive expiry refresh (`src/lib/paypal.ts`). Origin locked strictly to `https://api-m.sandbox.paypal.com`. |
-| **Invoicing v2 Draft** | **[VERIFIED]** | `POST /v2/invoicing/invoices` creates full merchant invoices in integer cents (`src/lib/paypalInvoicing.ts`). |
-| **Invoicing v2 Send & Pay Link** | **[VERIFIED]** | `POST /v2/invoicing/invoices/{id}/send` triggers delivery, and `GET /v2/invoicing/invoices/{id}` extracts `recipient_view_url` for live customer checkout. |
-| **Invoicing v2 Remind** | **[VERIFIED]** | `POST /v2/invoicing/invoices/{id}/remind` delivers AI-proposed, merchant-approved reminders via official PayPal notification channels. |
-| **Invoicing v2 QR Code & Cancel** | **[VERIFIED]** | `POST /v2/invoicing/invoices/{id}/generate-qr-code` for point-of-sale checkout; `POST /v2/invoicing/invoices/{id}/cancel` for revoking unpaid invoices. |
-| **Fee-Inclusive Payouts** | **[VERIFIED]** | US Domestic 2% fee schedule (min $0.25, max $1.00 USD) calculated upfront via `calculatePayoutFeeCents` (`src/lib/money.ts`). Reserve floor checks evaluate `amount + fee` before approving disbursements. |
-| **Two-Step Payout Authorization** | **[VERIFIED]** | Modal confirmation requiring explicit checkbox agreement (`confirmed: true`); server rejects unconfirmed payout requests. |
-| **Deterministic Idempotency** | **[VERIFIED]** | `PayPal-Request-Id` derived deterministically from `(bill_id, action, attempt)` — never random UUIDs. Prevents duplicate disbursements across retries. |
-| **Webhook Cryptographic Verification**| **[VERIFIED]** | Inbound payloads validated against PayPal certificate via `POST /v1/notifications/verify-webhook-signature`. Replays deduped via PostgreSQL `webhook_events(event_id UNIQUE)`. |
-| **Advisory Locks on Concurrency** | **[VERIFIED]** | PostgreSQL transactional advisory locks (`pg_advisory_xact_lock(hashtext(bill_id))`) prevent race conditions from simultaneous approvals. |
-| **Negative Mock Testing** | **[VERIFIED]** | Tested with `PayPal-Mock-Response` headers (`INSUFFICIENT_FUNDS`, `RECEIVER_UNREGISTERED`). |
+| OAuth 2.0 token cache, sandbox origin lock | Implemented | `src/lib/paypal.ts` (`getPayPalAccessToken`, `assertPermittedBaseUrl`) |
+| Invoicing v2: create, send, get (`recipient_view_url`) | Implemented | `src/lib/paypal.ts`, `src/app/api/invoices/*` |
+| Invoicing v2: remind (merchant-approved AI draft) | Implemented | `src/app/api/reminders/approve/route.ts` |
+| Payouts v1 with a deterministic `PayPal-Request-Id` | Implemented | `src/lib/paypal.ts` `dispatchPayout`, `src/lib/idempotency.ts` |
+| Fee-inclusive reserve check | Verified by tests | `src/lib/store.ts` `beginPayout`, `tests/store.test.ts` |
+| Settlement from item status only (not batch status) | Verified by tests | `parsePayoutBatch`, `/bench` TRAP-07 |
+| Webhook signature verification (fail closed) | Implemented | `src/app/api/paypal/webhook/route.ts` |
+| Postgres schema, triggers, advisory locks | Schema only | `db/migrations/`, `src/lib/repository/postgres.ts` (the runtime uses the in-memory store) |
+
+"Implemented" means the code path exists and runs. Tag a row [VERIFIED] only after a real sandbox run, and record the invoice or batch id here.
 
 ---
 
@@ -32,8 +31,8 @@ In accordance with our financial and security rules, we separate documented exte
 1. Log in to [PayPal Developer Dashboard](https://developer.paypal.com/).
 2. Under **Testing Tools** > **Sandbox Accounts**:
    - **Merchant Account** (Business Type): Serves as the MerchOps seller receiving collections and disbursing payments.
-   - **Customer Account** (Personal Type): e.g. `buyer@personal.example.com` (used by judges to pay invoices).
-   - **Vendor Account** (Personal Type): e.g. `vendor@personal.example.com` (receives payout items).
+   - **Customer Account** (Personal Type): any sandbox Personal account you create (used to pay invoices from the customer link).
+   - **Vendor Account** (Personal Type): a second sandbox Personal account; put its email on the bill that receives the payout.
 
 ### Step 2: REST App Credentials
 1. Go to **Apps & Credentials** > Sandbox.
@@ -115,7 +114,7 @@ sequenceDiagram
     PayPal-->>App: recipient_view_url
     App-->>Judge: Displays Live Payment Link & QR Code
     Judge->>Buyer: Opens recipient_view_url in Sandbox
-    Buyer->>PayPal: Logs in as buyer@personal.example.com & pays
+    Buyer->>PayPal: Logs in with a sandbox personal account & pays
     PayPal->>App: POST /api/paypal/webhook (INVOICING.INVOICE.PAID)
     App->>PayPal: POST /v1/notifications/verify-webhook-signature
     PayPal-->>App: Status: SUCCESS

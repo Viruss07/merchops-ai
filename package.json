@@ -15,6 +15,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:watch": "tsx --test --watch tests/*.test.ts",
     "db:migrate": "node scripts/migrate.mjs",
+    "mcp": "tsx mcp/server.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

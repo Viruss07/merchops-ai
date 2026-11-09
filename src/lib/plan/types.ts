@@ -67,13 +67,25 @@ export interface CashPlan {
   reserveBreached: boolean;
   breachDay?: number;
   narrative: string;
+  /** Who wrote the actions: the model, or the deterministic fallback template. */
+  origin: 'AI' | 'TEMPLATE';
+  /** What the projection takes for granted (e.g. a chased customer pays by Day 3). */
+  assumptions: string[];
 }
+
+/** A plan as proposed, before the deterministic validator adds its verdict. */
+export type PlanCandidate = Pick<CashPlan, 'id' | 'title' | 'subtitle' | 'actions' | 'narrative'> & {
+  origin?: CashPlan['origin'];
+};
 
 export interface CashPlanProposal {
   source: 'OPENROUTER_AI' | 'DETERMINISTIC_RULES';
   model: string;
   plans: CashPlan[];
   generatedAt: string;
+  /** True when every AI narrative passed the grounding check (no invented dollar figures). */
   groundingVerified: boolean;
+  /** Why the AI path was not used, when it was not (no key, all models failed, unparseable output). */
+  fallbackReason?: string;
 }
 

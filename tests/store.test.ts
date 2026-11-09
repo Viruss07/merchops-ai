@@ -67,7 +67,8 @@ test('store: in-flight payouts are reserved so concurrent authorizations cannot 
   assert.equal(second.ok, false);
   if (!second.ok) {
     assert.equal(second.reason, 'RESERVE_BREACH');
-    assert.equal(second.deficitCents, 35000);
+    // $5,050 - ($3,000 + $1.00 fee) - ($400 + $1.00 fee) = $1,648 -> $352 short of $2,000.
+    assert.equal(second.deficitCents, 35200);
   }
 });
 
