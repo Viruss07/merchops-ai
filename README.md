@@ -164,7 +164,7 @@ runner · Render Blueprint.
 ## Docs
 
 [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md) · [Sandbox guide](docs/SANDBOX_GUIDE.md)
-· [Demo script](docs/DEMO_SCRIPT.md) · [Product](PRODUCT.md) · [Design](DESIGN.md)
+· [Demo script](docs/DEMO_SCRIPT.md) · [Video script](docs/VIDEO_SCRIPT.md) · [Product](PRODUCT.md) · [Design](DESIGN.md)
 
 ## License
 

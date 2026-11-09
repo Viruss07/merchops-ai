@@ -36,18 +36,9 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 
 ## 3. Video Demo Script (< 3 Minutes)
 
-- **0:00 – 0:20 | The Problem & The Day-10 Deficit**  
-  *Visual*: Open MerchOps dashboard. Highlight cleared cash ($4,200) vs. reserve floor ($2,000). Show the red Day-10 deficit where Acme Supplies ($3,000) bill matures before receivables land.
-- **0:20 – 1:00 | Real PayPal Invoicing & Settlement**  
-  *Visual*: Click Collections. Click "Create PayPal Link" on Apex Corp's overdue invoice ($1,500). Open the live PayPal Sandbox customer pay URL. Log in as test customer, complete payment. Return to MerchOps: verified webhook arrives, invoice flips to PAID, and Day-10 breach disappears!
-- **1:00 – 1:40 | Cash Plan Copilot: Rules Reject the Unsafe Plan**  
-  *Visual*: Open AI Cash Plans. Show the three side-by-side plans. Point out that the "Lowest Cost" plan attempted immediate full disbursement without collections: the deterministic rule engine rejected it with `RULE_RESERVE_FLOOR_BREACH`. Show the merchant approving the "Safest" plan.
-- **1:40 – 2:20 | Real PayPal Payout Settlement**  
-  *Visual*: Go to Payouts. Open Two-Step Authorization for Nexus Cloud ($400.00). Point out the fee calculation (+$1.00 fee included in reserve check) and deterministic `PayPal-Request-Id`. Confirm payout. Show the batch id, and that settlement is decided by the item status, not the batch status.
-- **2:20 – 2:50 | The Guardrail Bench & Agentic MCP**  
-  *Visual*: Navigate to `/bench`. Show the 12 attacks executed live on page load against the real guard code: 12/12 blocked, each with the guard's own output. Briefly show Claude Desktop connected via MCP staging proposals without money-moving capability.
-- **2:50 – 3:00 | Conclusion**  
-  *Closing message*: "MerchOps AI: An AI CFO that can't touch your money. Proven safe, verified on PayPal, built for resilient commerce."
+The scene-by-scene script, timings and recording checklist are in [VIDEO_SCRIPT.md](VIDEO_SCRIPT.md).
+
+- **YouTube**: add the link once uploaded
 
 ---
 
