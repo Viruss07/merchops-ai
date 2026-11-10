@@ -2,7 +2,7 @@
 
 import React, { use, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, ExternalLink, Loader2, Mail, RefreshCw, Send } from 'lucide-react';
+import { Check, CheckCircle2, ExternalLink, Loader2, Mail, RefreshCw, Send } from 'lucide-react';
 import { WithState } from '@/components/shell/WithState';
 import { useAppState } from '@/components/shell/AppState';
 import { RunwayCard } from '@/components/runway/RunwayCard';
@@ -25,6 +25,7 @@ import {
   ApiError,
   createPayPalInvoice,
   getErrorMessage,
+  recordPayPalPayment,
   simulatePayment,
   syncInvoices,
 } from '@/lib/apiClient';
@@ -41,7 +42,7 @@ import { ifCollected } from '@/lib/client/whatIf';
 import type { Invoice, RunwayForecast, StateSnapshot } from '@/types';
 import { ReminderComposer } from './ReminderComposer';
 
-type Busy = null | 'paypal' | 'sync' | 'simulate';
+type Busy = null | 'paypal' | 'sync' | 'simulate' | 'record';
 
 /** One next action, chosen by where the invoice is. The only shadowed panel on the page. */
 function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnapshot }) {
@@ -117,7 +118,7 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
           {overdue
             ? `${formatCentsToUSD(invoice.amountCents)} was due ${formatDate(invoice.dueDate)}, ${invoice.daysOverdue} days ago. Until it's paid, the runway doesn't count it.`
             : invoice.paypalInvoiceId
-              ? `PayPal has the invoice. When ${invoice.customerName} pays, PayPal's webhook marks it collected, or check now.`
+              ? `PayPal has the invoice. "Mark paid on PayPal" records ${invoice.customerName}'s payment on it, no login needed; cash is credited once PayPal confirms.`
               : `Due ${formatDate(invoice.dueDate)}. Sending it as a PayPal invoice gives the customer a pay link and lets PayPal confirm the payment.`}
         </p>
       )}
@@ -168,12 +169,35 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
                     href={invoice.recipientViewUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className={overdue ? btn.secondary : btn.primary}
+                    className={btn.secondary}
                   >
                     <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                    Open the customer&apos;s pay page
+                    Customer&apos;s pay page
                   </a>
                 )}
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run(
+                      'record',
+                      () => recordPayPalPayment(invoice.id),
+                      'PayPal did not record the payment',
+                    )
+                  }
+                  className={btn.primary}
+                  title="Records the customer's payment on the PayPal invoice. No PayPal login needed."
+                >
+                  {busy === 'record' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {busy === 'record' ? 'Recording on PayPal…' : 'Mark paid on PayPal'}
+                </button>
                 <button
                   type="button"
                   disabled={busy !== null}
@@ -219,7 +243,7 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
               : `Simulate ${invoice.customerName} paying ${formatCentsToUSD(invoice.amountCents)}`}
           </button>
           <p className="mt-1 text-xs text-ink-3">
-            For the demo: records the payment without PayPal, marked simulated in the ledger.
+            For the demo: records the payment without PayPal, marked simulated in the audit log.
           </p>
         </div>
       )}
@@ -243,7 +267,7 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
   );
 }
 
-/** What collecting this invoice does to cleared cash and to the floor. A receipt, label left, amount right. */
+/** What collecting this invoice does to cleared cash and to the reserve. A receipt, label left, amount right. */
 function MoneyPanel({
   invoice,
   snapshot,
@@ -271,10 +295,10 @@ function MoneyPanel({
         {paid
           ? 'In cleared cash'
           : after && forecast.hasReserveBreach && !after.forecast.hasReserveBreach
-            ? 'The floor holds again'
+            ? 'The reserve holds again'
             : after?.forecast.hasReserveBreach
               ? `Still crosses on Day ${after.forecast.firstBreachDay}`
-              : 'The runway stays above the floor'}
+              : 'The runway stays above the reserve'}
       </p>
       {!paid && after && (
         <dl className="mt-3">

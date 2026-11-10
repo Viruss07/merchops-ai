@@ -3,11 +3,10 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { AppStateProvider } from '@/components/shell/AppState';
 import { SiteFooter, SiteHeader } from '@/components/shell/SiteHeader';
-import { JudgeTour } from '@/components/shell/JudgeTour';
 import './globals.css';
 
 const DESCRIPTION =
-  'A 30-day cash runway with a hard reserve floor. The AI proposes plans; deterministic rules decide. Nothing moves without merchant approval.';
+  'A 30-day cash runway with a hard safety reserve. The AI proposes plans; deterministic rules decide. Nothing moves without merchant approval.';
 
 export const metadata: Metadata = {
   title: {
@@ -37,7 +36,6 @@ export default function RootLayout({
             {children}
           </div>
           <SiteFooter />
-          <JudgeTour />
         </AppStateProvider>
       </body>
     </html>

@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     if (!inv || !inv.paypalInvoiceId) continue;
     try {
       const details = await getInvoice(inv.paypalInvoiceId);
-      if (details.status === 'PAID' && inv.status !== 'PAID') {
+      if ((details.status === 'PAID' || details.status === 'MARKED_AS_PAID') && inv.status !== 'PAID') {
         demoStore.payInvoice(inv.id, {
           actor: 'SYSTEM',
           isSimulated: false,

@@ -48,11 +48,10 @@ Open `/` (live URL above, or `http://localhost:3000` locally). **No keys are nee
    double click, swapped receiver, unsettled batch, forged webhook, production endpoint, and more) **live
    on each page load** against the real guard functions, and shows what each guard returned
    ([`src/lib/bench/run.ts`](src/lib/bench/run.ts)).
-6. **Run it live on PayPal** (needs sandbox keys). `/demo` → "Run it live": creates and sends a real
-   Invoicing v2 invoice for Apex Corp ($1,500.00) and shows PayPal's `recipient_view_url`. Pay it with a
-   sandbox *personal* account, then press Sync: MerchOps reads the invoice from PayPal, marks it PAID, and the
-   breach disappears. Then pay Nexus Cloud ($400.00) through `POST /v1/payments/payouts` with a deterministic
-   `PayPal-Request-Id`.
+6. **Run it live on PayPal** (needs sandbox keys). Home page → "Bonus" → **Run it on PayPal**: one click
+   creates and sends a real Invoicing v2 invoice (Beacon Studios, $850.00), records the customer's payment on
+   it through `POST /v2/invoicing/invoices/{id}/payments` (no buyer login needed), credits cash only once
+   PayPal reports it paid, then sends a real Payouts batch to Nexus Cloud ($400.00) after the reserve check.
 7. **Agents.** `npm run mcp` starts an MCP server for Claude Desktop and other agents (tools below). None of
    its tools can move money.
 
@@ -84,7 +83,7 @@ All calls are typed REST in [`src/lib/paypal.ts`](src/lib/paypal.ts), locked to
 
 | Feature | Model | What the AI may do | What code does |
 |---|---|---|---|
-| Cash Plan Copilot ([`plan/engine.ts`](src/lib/plan/engine.ts)) | OpenRouter free models: `recursive/flint-v1.0:free` → `dots-studio/dots-3-note-preview:free` → `nvidia/nemotron-3.5-super-vl:free` (each env-overridable) | Return three plans as JSON, built only from 6 closed action types | Strict schema parse (unknown actions and extra fields are dropped); grounding check (no dollar figures the code didn't compute); a full 30-day re-simulation and policy checks; the verdict |
+| Cash Plan Copilot ([`plan/engine.ts`](src/lib/plan/engine.ts)) | OpenRouter free models: `nvidia/nemotron-3.5-super-vl:free` → `dots-studio/dots-3-note-preview:free` → `recursive/flint-v1.0:free` (each env-overridable) | Return three plans as JSON, built only from 6 closed action types | Strict schema parse (unknown actions and extra fields are dropped); grounding check (no dollar figures the code didn't compute); a full 30-day re-simulation and policy checks; the verdict |
 | Reminder drafts ([`api/ai/draft-reminder`](src/app/api/ai/draft-reminder/route.ts)) | Same chain | Draft the email text | Output schema validation, rate limit, merchant approval before PayPal `/remind` |
 | Prompt-injection spotlight ([`ai/spotlight.ts`](src/lib/ai/spotlight.ts)) | n/a | n/a | Customer and vendor text is delimited as untrusted and scanned for override patterns before it reaches a prompt |
 
@@ -151,7 +150,7 @@ Optional `.env.local` (see [`.env.example`](.env.example)):
 
 Without PayPal keys, "Run it live" step 1 reports that credentials aren't configured. Everything else works.
 
-**Deploy:** [`render.yaml`](render.yaml) is a Render Blueprint (web service plus Postgres). Set the PayPal and
+**Deploy:** see [`RENDER.md`](RENDER.md) for the step-by-step free-plan setup and keep-warm cron. [`render.yaml`](render.yaml) is the Render Blueprint (one free web service; state is in memory). Set the PayPal and
 OpenRouter secrets, then register the webhook:
 `node scripts/register-webhook.mjs https://<service>.onrender.com/api/paypal/webhook`.
 

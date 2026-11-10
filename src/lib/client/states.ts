@@ -69,7 +69,7 @@ export function billStatus(bill: Bill): { label: string; tone: Tone } {
   }
 }
 
-export const BILL_STEPS = ['Due', 'Floor check', 'You approve', 'PayPal settles'] as const;
+export const BILL_STEPS = ['Due', 'Reserve check', 'You approve', 'PayPal settles'] as const;
 
 export function billStep(bill: Bill): number {
   switch (bill.status) {
@@ -101,8 +101,8 @@ export const isOpenBill = (bill: Bill) =>
 
 const EVENTS: Record<string, string> = {
   SYSTEM_INITIALIZED: 'Ledger opened',
-  RUNWAY_MONITOR_ACTIVE: 'Runway monitor saw the floor crossed',
-  PAYOUT_BLOCKED_RESERVE_BREACH: 'Payout refused by the floor',
+  RUNWAY_MONITOR_ACTIVE: 'Runway monitor saw the reserve crossed',
+  PAYOUT_BLOCKED_RESERVE_BREACH: 'Payout refused by the reserve',
   PAYOUT_APPROVED: 'You approved a payout',
   PAYOUT_ACCEPTED_PAYPAL: 'PayPal accepted the payout batch',
   PAYOUT_IN_FLIGHT: 'Payout in flight',

@@ -147,7 +147,10 @@ export async function POST(req: NextRequest) {
         status: 'IN_FLIGHT',
         billId: bill.id,
         batchId,
-        message: `PayPal batch ${batchId} is still ${batch.batchStatus ?? 'pending'}. No debit has been applied.`,
+        message:
+          batch.itemStatuses.includes('UNCLAIMED')
+            ? `PayPal processed batch ${batchId}, but the payment is UNCLAIMED: the receiver has no sandbox account yet. It stays in flight and no debit has been applied.`
+            : `PayPal batch ${batchId} is ${batch.batchStatus ?? 'pending'}, items ${batch.itemStatuses.join(', ') || 'pending'}. No debit has been applied.`,
         snapshot: demoStore.getSnapshot(),
       },
       { status: 202, headers: { 'Cache-Control': 'no-store' } }

@@ -32,7 +32,7 @@ export function RunwayCard({
   const autoStamp =
     stamp === undefined
       ? forecast.hasReserveBreach
-        ? { label: 'Below the floor', value: `−${formatCentsToUSD(deficit)}` }
+        ? { label: 'Below the reserve', value: `−${formatCentsToUSD(deficit)}` }
         : null
       : stamp;
 
@@ -58,7 +58,7 @@ export function RunwayCard({
         />
         <dl className="mt-4 grid grid-cols-3 divide-x divide-rule border-t border-rule pt-3">
           <Readout label="Cleared" value={formatCentsToUSD(clearedCents)} />
-          <Readout label="Floor" value={formatCentsToUSD(floorCents)} />
+          <Readout label="Reserve" value={formatCentsToUSD(floorCents)} />
           <Readout
             label={
               forecast.firstBreachDay === 0

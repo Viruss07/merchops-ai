@@ -71,8 +71,8 @@ function Verdict({ snapshot, forecast }: { snapshot: StateSnapshot; forecast: Ru
       <Section
         id="verdict"
         tone="safe"
-        title="The floor holds"
-        description={`The lowest the balance gets in the next ${forecast.days.length} days is ${formatCentsToUSD(forecast.minBalanceCents)}, ${formatCentsToUSD(forecast.minBalanceCents - snapshot.account.minReserveCents)} above the floor.`}
+        title="The reserve holds"
+        description={`The lowest the balance gets in the next ${forecast.days.length} days is ${formatCentsToUSD(forecast.minBalanceCents)}, ${formatCentsToUSD(forecast.minBalanceCents - snapshot.account.minReserveCents)} above the reserve.`}
       >
         <Link href="/bills" className={btn.secondary}>
           See what you can pay
@@ -88,7 +88,7 @@ function Verdict({ snapshot, forecast }: { snapshot: StateSnapshot; forecast: Ru
       className="rounded-lg border border-blocked/40 bg-blocked-field/60 p-4 shadow-card sm:p-5"
     >
       <h2 id="verdict-h" className="text-sm font-medium text-ink-2">
-        The floor is crossed on Day {forecast.firstBreachDay}
+        The reserve is crossed on Day {forecast.firstBreachDay}
       </h2>
       <p className="money mt-1 text-3xl font-semibold text-blocked">−{formatCentsToUSD(deficit)}</p>
       <p className="mt-2 text-sm leading-relaxed text-ink-2">
@@ -99,11 +99,11 @@ function Verdict({ snapshot, forecast }: { snapshot: StateSnapshot; forecast: Ru
             </Link>{' '}
             ({formatCentsToUSD(breachBill.amountCents)}) lands on {formatDate(breachBill.dueDate)}{' '}
             and takes the balance under the {formatCentsToUSD(snapshot.account.minReserveCents)}{' '}
-            floor.
+            reserve.
           </>
         ) : (
           <>
-            The balance goes under the {formatCentsToUSD(snapshot.account.minReserveCents)} floor.
+            The balance goes under the {formatCentsToUSD(snapshot.account.minReserveCents)} reserve.
           </>
         )}
       </p>
@@ -218,14 +218,14 @@ export default function RunwayPage() {
         return (
           <Page>
             <PageHeader
-              title="Runway"
+              title="Cash forecast"
               meta={
                 <>
                   <StatusPill
                     label={
                       forecast.hasReserveBreach
-                        ? `Floor crossed · Day ${forecast.firstBreachDay}`
-                        : 'Above the floor'
+                        ? `Reserve crossed · Day ${forecast.firstBreachDay}`
+                        : 'Above the reserve'
                     }
                     tone={forecast.hasReserveBreach ? 'blocked' : 'safe'}
                   />
@@ -306,7 +306,7 @@ export default function RunwayPage() {
                 <dl className="rounded-lg border border-rule bg-panel px-4 py-2 text-sm">
                   {[
                     ['Cleared today', formatCentsToUSD(snapshot.account.clearedBalanceCents)],
-                    ['Reserve floor', formatCentsToUSD(floor)],
+                    ['Safety reserve', formatCentsToUSD(floor)],
                     [
                       'Expected in',
                       formatCentsToUSD(
@@ -334,7 +334,7 @@ export default function RunwayPage() {
                   ))}
                 </dl>
                 <p className="text-xs leading-relaxed text-ink-3">
-                  The floor is a rule, not a target: the payout guard refuses any payment that would
+                  The reserve is a rule, not a target: the payout guard refuses any payment that would
                   leave less than {formatCentsToUSD(floor)}, PayPal&apos;s fee included.
                 </p>
               </aside>

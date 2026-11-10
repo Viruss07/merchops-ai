@@ -229,3 +229,19 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return 'An unexpected error occurred.';
 }
+
+export interface RecordPayPalPaymentResponse {
+  success: boolean;
+  paypalInvoiceId: string;
+  paypalStatus: string;
+  message: string;
+  snapshot: StateSnapshot;
+}
+
+/** Records the customer's payment on the PayPal sandbox invoice, so no buyer login is needed. */
+export function recordPayPalPayment(invoiceId: string): Promise<RecordPayPalPaymentResponse> {
+  return request<RecordPayPalPaymentResponse>('/api/invoices/record-payment', {
+    method: 'POST',
+    body: JSON.stringify({ invoiceId }),
+  });
+}

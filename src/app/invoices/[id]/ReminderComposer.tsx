@@ -65,7 +65,7 @@ export function ReminderComposer({ invoice, onDone }: { invoice: Invoice; onDone
           Reminder approved
         </p>
         <p className="mt-1 text-ink-2">
-          It&apos;s in the ledger with your approval.{' '}
+          It&apos;s in the audit log with your approval.{' '}
           {invoice.paypalInvoiceId
             ? 'PayPal sends it with the invoice.'
             : 'No email transport is configured in the demo, so it was staged, not emailed.'}

@@ -30,7 +30,7 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
   - Invoicing v2 (`createDraft`, `send`, `get`, `remind`, `cancel`, `QR`)
   - Payouts v1 (`createPayoutBatch`, `getPayoutBatch`, `getPayoutItem`)
   - Webhooks v1 with cryptographic signature verification (`POST /v1/notifications/verify-webhook-signature`)
-- **AI Models & Defense**: OpenRouter free-model fallback chain (`recursive/flint-v1.0:free` -> `dots-studio/dots-3-note-preview:free` -> `nvidia/nemotron-3.5-super-vl:free`). The model's JSON plans are parsed against a closed action schema, grounded (no invented dollar figures), and re-simulated by the deterministic validator; prompt-injection spotlighting on customer and vendor text.
+- **AI Models & Defense**: OpenRouter free-model fallback chain (`nvidia/nemotron-3.5-super-vl:free` -> `dots-studio/dots-3-note-preview:free` -> `recursive/flint-v1.0:free`). The model's JSON plans are parsed against a closed action schema, grounded (no invented dollar figures), and re-simulated by the deterministic validator; prompt-injection spotlighting on customer and vendor text.
 
 ---
 

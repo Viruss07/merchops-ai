@@ -150,6 +150,7 @@ interface DemoStoreState {
   bills: Bill[];
   auditLogs: AuditLogEntry[];
   idempotencyMap: Map<string, IdempotencyOutcome>;
+  payoutEpoch: string;
 }
 
 // Next.js route handlers can be bundled as separate entrypoints. Keeping the
@@ -159,6 +160,15 @@ const globalForStore = globalThis as unknown as {
   __merchops_demo_store__?: DemoStoreState;
 };
 
+/**
+ * PayPal remembers every sender_batch_id forever, so a payout key that is the same after a reset
+ * (or on a fresh server) would be rejected as a duplicate. The epoch keeps keys stable within one
+ * demo run, which is what stops double clicks, and fresh across runs.
+ */
+function newPayoutEpoch(): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+}
+
 const storeState: DemoStoreState =
   globalForStore.__merchops_demo_store__ ?? {
     account: structuredClone(INITIAL_ACCOUNT),
@@ -166,6 +176,7 @@ const storeState: DemoStoreState =
     bills: structuredClone(createInitialBills()),
     auditLogs: structuredClone(INITIAL_AUDIT_LOGS),
     idempotencyMap: new Map<string, IdempotencyOutcome>(),
+    payoutEpoch: newPayoutEpoch(),
   };
 
 globalForStore.__merchops_demo_store__ = storeState;
@@ -190,6 +201,7 @@ export const demoStore = {
       demoConfig: {
         asOfDate: DEMO_AS_OF,
         forecastDays: DEFAULT_FORECAST_DAYS,
+        payoutEpoch: (storeState.payoutEpoch ??= newPayoutEpoch()),
       },
     };
   },
@@ -705,6 +717,7 @@ export const demoStore = {
     storeState.bills = structuredClone(createInitialBills());
     storeState.auditLogs = structuredClone(INITIAL_AUDIT_LOGS);
     storeState.idempotencyMap.clear();
+    storeState.payoutEpoch = newPayoutEpoch();
     return this.getSnapshot();
   },
 };

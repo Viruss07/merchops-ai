@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Plans',
+  title: 'AI plans',
   description: 'AI cash plans, each checked by deterministic rules.',
 };
 

@@ -105,5 +105,7 @@ export interface StateSnapshot {
   demoConfig: {
     asOfDate: string;
     forecastDays: number;
+    /** Changes on every reset and server start; part of each PayPal-Request-Id. */
+    payoutEpoch: string;
   };
 }

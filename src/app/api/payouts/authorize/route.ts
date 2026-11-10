@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { demoStore } from '@/lib/store';
 import { formatCentsToUSD } from '@/lib/money';
-import { PAYPAL_SANDBOX_ENABLED } from '@/lib/config';
+import { PAYPAL_SANDBOX_ENABLED, payoutReceiverFor } from '@/lib/config';
 import { jsonError, requireSameOrigin } from '@/lib/http';
 import { parseJson, payoutSchema } from '@/lib/validation';
 import { derivePayoutRequestId } from '@/lib/idempotency';
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
 
   const { billId, executionMode } = parsed.data;
-  const idempotencyKey = derivePayoutRequestId(billId);
+  const idempotencyKey = derivePayoutRequestId(billId, demoStore.getSnapshot().demoConfig.payoutEpoch);
 
   if (executionMode === 'PAYPAL_SANDBOX' && !PAYPAL_SANDBOX_ENABLED) {
     return jsonError(
@@ -287,7 +287,7 @@ export async function POST(req: NextRequest) {
       idempotencyKey,
       amountCents: bill.amountCents,
       currency: 'USD',
-      receiverEmail: bill.vendorEmail,
+      receiverEmail: payoutReceiverFor(bill.vendorEmail),
       senderBatchId: `batch-${idempotencyKey}`,
       note: `Payment for ${bill.description}`,
       emailSubject: `Payment from ${beginResult.snapshot.account.businessName}`,

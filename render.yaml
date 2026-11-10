@@ -4,17 +4,13 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install && npm run build
-    startCommand: npm run db:migrate && npm start
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: merchops-db
-          property: connectionString
       - key: PAYPAL_API_BASE_URL
         value: https://api-m.sandbox.paypal.com
       - key: PAYPAL_PAYOUTS_ENABLED
@@ -31,17 +27,16 @@ services:
         sync: false
       - key: PAYPAL_WEBHOOK_ID
         sync: false
+      - key: PAYPAL_PAYOUT_RECEIVER_EMAIL
+        sync: false
+      - key: NODE_VERSION
+        value: "22"
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: recursive/flint-v1.0:free
+        value: nvidia/nemotron-3.5-super-vl:free
       - key: AI_MODEL_FALLBACK
         value: dots-studio/dots-3-note-preview:free
       - key: AI_MODEL_FALLBACK_2
-        value: nvidia/nemotron-3.5-super-vl:free
-
-databases:
-  - name: merchops-db
-    plan: free
-    region: oregon
+        value: recursive/flint-v1.0:free
 

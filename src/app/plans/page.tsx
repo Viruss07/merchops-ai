@@ -168,7 +168,7 @@ function PlanRow({
             </dd>
           </div>
           <div className="flex items-baseline justify-between">
-            <dt className="text-ink-2">The floor</dt>
+            <dt className="text-ink-2">The reserve</dt>
             <dd className={plan.reserveBreached ? 'font-medium text-blocked' : 'text-ink'}>
               {plan.reserveBreached ? `Crossed on Day ${plan.breachDay}` : 'Never crossed'}
             </dd>
@@ -226,7 +226,7 @@ function Plans({ snapshot }: { snapshot: StateSnapshot }) {
   return (
     <Page>
       <PageHeader
-        title="Plans"
+        title="AI plans"
         meta={
           proposal && !loading ? (
             <>

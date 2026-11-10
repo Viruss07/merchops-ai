@@ -24,13 +24,13 @@ export function Mark({ className = 'h-5 w-5' }: { className?: string }) {
 }
 
 const LINKS = [
-  { href: '/runway', label: 'Runway' },
+  { href: '/', label: 'Guided demo' },
+  { href: '/runway', label: 'Forecast' },
+  { href: '/plans', label: 'AI plans' },
   { href: '/invoices', label: 'Invoices' },
   { href: '/bills', label: 'Bills' },
-  { href: '/plans', label: 'Plans' },
-  { href: '/ledger', label: 'Ledger' },
-  { href: '/bench', label: 'Bench' },
-  { href: '/demo', label: 'Judge mode' },
+  { href: '/ledger', label: 'Audit log' },
+  { href: '/bench', label: 'Safety tests' },
 ];
 
 /** Reset wipes the demo, so it asks first, in place: no browser dialog. */
@@ -50,7 +50,7 @@ function ResetButton() {
         role="group"
         aria-label="Reset the demo"
       >
-        <span className="hidden text-ink-2 lg:inline">Reset all demo data?</span>
+        <span className="hidden text-ink-2 lg:inline">Start the demo over?</span>
         <button
           type="button"
           onClick={async () => {
@@ -107,7 +107,10 @@ export function SiteHeader() {
           <span className="hidden sm:inline">MerchOps</span>
         </Link>
         {LINKS.map((link) => {
-          const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+          const active =
+            link.href === '/'
+              ? pathname === '/'
+              : pathname === link.href || pathname.startsWith(`${link.href}/`);
           return (
             <Link
               key={link.href}
@@ -129,19 +132,14 @@ export function SiteHeader() {
               className="hidden items-baseline gap-1.5 rounded-md px-2 py-1 no-underline transition-colors hover:bg-panel md:flex"
               title={simulated ? 'Cleared cash · simulation mode' : 'Cleared cash · PayPal sandbox'}
             >
-              <span className="text-xs text-ink-3">Cleared</span>
+              <span className="text-xs text-ink-3">Cash</span>
               <span className="money text-sm font-semibold text-ink">
                 {formatCentsToUSD(cleared)}
               </span>
             </Link>
           )}
           <ResetButton />
-          <Link
-            href="/plans"
-            className="inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-md bg-accent px-3.5 text-sm font-medium text-accent-ink no-underline shadow-sm transition-opacity hover:opacity-90"
-          >
-            Get a plan
-          </Link>
+
         </div>
       </nav>
     </header>
@@ -155,7 +153,7 @@ export function SiteFooter() {
     mode === 'SANDBOX_VERIFIED'
       ? 'PayPal sandbox, payouts verified'
       : mode === 'SANDBOX_UNVERIFIED'
-        ? 'PayPal sandbox'
+        ? 'Connected to PayPal sandbox'
         : 'Simulation: no PayPal calls are made';
   return (
     <footer className="border-t border-rule">
@@ -166,7 +164,7 @@ export function SiteFooter() {
             className={`h-1.5 w-1.5 rounded-full ${mode && mode !== 'SIMULATION' ? 'bg-safe' : 'bg-ink-3'}`}
             aria-hidden="true"
           />
-          {snapshot ? modeLabel : 'Connecting…'} · integer cents, no real money
+          {snapshot ? modeLabel : 'Connecting…'} · test money only, no real funds
         </p>
       </div>
     </footer>

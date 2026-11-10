@@ -1,8 +1,16 @@
 name: Keep Warm & Production Health
 
+# Render's free web service sleeps after 15 minutes without traffic, and waking it takes about a
+# minute. This workflow pings the health probe every 10 minutes so judges never hit a cold start.
+# Once an hour it also asks for the AI plans: the server caches them for an hour, so the guided
+# demo's "Ask the AI" step answers instantly instead of waiting 10-50s for a free model.
+#
+# Setup: repo Settings -> Secrets and variables -> Actions -> New repository secret
+#   PRODUCTION_URL = https://<your-service>.onrender.com   (no trailing slash)
+# See RENDER.md.
+
 on:
   schedule:
-    # Run every 10 minutes to prevent Render free-tier cold starts
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
@@ -10,19 +18,32 @@ jobs:
   ping-health:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Production Health Probe
+      - name: Ping the health probe
         run: |
           PROD_URL="${{ secrets.PRODUCTION_URL }}"
           if [ -z "$PROD_URL" ]; then
-            echo "[INFO] PRODUCTION_URL secret is not set yet. Skipping ping until deployed."
+            echo "[INFO] PRODUCTION_URL secret is not set yet. Skipping until deployed."
             exit 0
           fi
-          echo "Pinging ${PROD_URL}/api/health ..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PROD_URL}/api/health" || echo "000")
-          echo "HTTP Status: $STATUS"
+          # A sleeping free instance can take ~60s to answer the first request.
+          STATUS=$(curl -s -o /dev/null -m 120 -w "%{http_code}" "${PROD_URL}/api/health" || echo "000")
+          echo "GET /api/health -> HTTP $STATUS"
           if [ "$STATUS" -ne 200 ]; then
             echo "Health probe did not return 200 OK"
             exit 1
           fi
-          echo "Production deployment is warm and healthy."
 
+      - name: Pre-warm the AI plan cache (once an hour)
+        continue-on-error: true
+        run: |
+          PROD_URL="${{ secrets.PRODUCTION_URL }}"
+          if [ -z "$PROD_URL" ]; then exit 0; fi
+          MINUTE=$(date -u +%M)
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$MINUTE" -ge 10 ]; then
+            echo "Not the first run of the hour; skipping."
+            exit 0
+          fi
+          STATUS=$(curl -s -o /dev/null -m 120 -w "%{http_code}" -X POST \
+            -H "content-type: application/json" -H "origin: $PROD_URL" \
+            -d '{}' "${PROD_URL}/api/ai/propose-plan" || echo "000")
+          echo "POST /api/ai/propose-plan -> HTTP $STATUS (failure here never fails the job)"

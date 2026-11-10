@@ -185,6 +185,7 @@ export class PgRepository implements IRepository {
       demoConfig: {
         asOfDate: DEMO_AS_OF,
         forecastDays: DEFAULT_FORECAST_DAYS,
+        payoutEpoch: 'v1',
       },
     };
   }

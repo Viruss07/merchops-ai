@@ -59,11 +59,21 @@ function checkDailyCap(maxDaily = 100): boolean {
  */
 export function getModelChain(): string[] {
   return [
-    process.env.OPENROUTER_MODEL || 'recursive/flint-v1.0:free',
+    process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-super-vl:free',
     process.env.AI_MODEL_FALLBACK || 'dots-studio/dots-3-note-preview:free',
-    process.env.AI_MODEL_FALLBACK_2 || 'nvidia/nemotron-3.5-super-vl:free',
+    process.env.AI_MODEL_FALLBACK_2 || 'recursive/flint-v1.0:free',
   ];
 }
+
+/**
+ * The free models are reasoning models: left alone they spend the whole token budget thinking and
+ * return no content. Ask for no reasoning first; a model that requires it (HTTP 400) is retried
+ * once with low effort and a larger budget.
+ */
+const REASONING_ATTEMPTS = [
+  { reasoning: { enabled: false }, extraTokens: 0 },
+  { reasoning: { effort: 'low' }, extraTokens: 6000 },
+] as const;
 
 export function computePromptHash(messages: AiChatMessage[]): string {
   const repr = JSON.stringify(messages);
@@ -110,58 +120,59 @@ export async function executeAiInference(options: AiInferenceOptions): Promise<A
 
   let lastError: Error | null = null;
 
+  // One overall budget across the whole chain, so a judge never waits more than about a minute.
+  const deadline = Date.now() + Number(process.env.AI_TOTAL_TIMEOUT_MS || 55000);
+
   for (const model of models) {
-    const start = Date.now();
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'http://localhost:3000',
-          'X-Title': process.env.OPENROUTER_SITE_NAME || 'MerchOps AI',
-        },
-        body: JSON.stringify({
-          model,
-          messages: options.messages,
-          temperature: options.temperature ?? 0.2,
-          max_tokens: options.maxTokens ?? 1500,
-          response_format: options.jsonMode ? { type: 'json_object' } : undefined,
-        }),
-        signal: AbortSignal.timeout(25000), // free models can take ~20s for JSON
-      });
+    for (const attempt of REASONING_ATTEMPTS) {
+      const remaining = deadline - Date.now();
+      if (remaining < 3000) break;
+      const start = Date.now();
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'http://localhost:3000',
+            'X-Title': process.env.OPENROUTER_SITE_NAME || 'MerchOps AI',
+          },
+          body: JSON.stringify({
+            model,
+            messages: options.messages,
+            temperature: options.temperature ?? 0.2,
+            max_tokens: (options.maxTokens ?? 1500) + attempt.extraTokens,
+            reasoning: attempt.reasoning,
+            response_format: options.jsonMode ? { type: 'json_object' } : undefined,
+          }),
+          signal: AbortSignal.timeout(Math.min(30000, remaining)), // free models can take ~20s for JSON
+        });
 
-      if (!response.ok) {
-        lastError = new Error(`Model ${model} returned HTTP ${response.status}`);
-        continue; // Fall through to next model
+        if (response.status === 400 && 'enabled' in attempt.reasoning) {
+          // Reasoning is mandatory for this model: retry it with low effort.
+          lastError = new Error(`Model ${model} requires reasoning`);
+          continue;
+        }
+        if (!response.ok) {
+          lastError = new Error(`Model ${model} returned HTTP ${response.status}`);
+          break; // Fall through to the next model
+        }
+
+        const json = await response.json();
+        const content = json.choices?.[0]?.message?.content?.trim();
+
+        if (!content) {
+          lastError = new Error(`Model ${model} returned empty response`);
+          break;
+        }
+
+        const latencyMs = Date.now() - start;
+        proposalCache.set(promptHash, { content, model, createdAt: Date.now() });
+        return { content, modelUsed: model, latencyMs, promptHash };
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        break; // Timeout or network error: try the next model
       }
-
-      const json = await response.json();
-      const content = json.choices?.[0]?.message?.content?.trim();
-
-      if (!content) {
-        lastError = new Error(`Model ${model} returned empty response`);
-        continue;
-      }
-
-      const latencyMs = Date.now() - start;
-
-      // Cache successful response
-      proposalCache.set(promptHash, {
-        content,
-        model,
-        createdAt: Date.now(),
-      });
-
-      return {
-        content,
-        modelUsed: model,
-        latencyMs,
-        promptHash,
-      };
-    } catch (err: unknown) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      // Continue to next fallback model
     }
   }
 

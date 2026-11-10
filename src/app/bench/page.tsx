@@ -9,12 +9,12 @@ import { Figure, Page, PageHeader, StatusPill, TONE_SURFACE } from '@/components
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'Guardrail bench',
+  title: 'Safety tests',
   description: '12 attacks on a payments copilot, each run live against the real MerchOps guard.',
 };
 
 const CATEGORY: Record<BenchScenario['category'], string> = {
-  RESERVE_SAFETY: 'Reserve floor',
+  RESERVE_SAFETY: 'Safety reserve',
   PROMPT_INJECTION: 'Prompt injection',
   IDEMPOTENCY: 'Double payment',
   DATA_INTEGRITY: 'Data integrity',
@@ -32,7 +32,7 @@ export default async function BenchPage() {
   return (
     <Page>
       <PageHeader
-        title="Guardrail bench"
+        title="Safety tests"
         meta={
           <>
             <StatusPill

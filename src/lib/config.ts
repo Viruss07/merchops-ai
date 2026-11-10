@@ -37,3 +37,14 @@ export const DEMO_AS_OF = getDemoAsOf();
 export const DEFAULT_MIN_RESERVE_CENTS = getDefaultMinReserveCents();
 export const DEFAULT_FORECAST_DAYS = getDefaultForecastDays();
 export const PAYPAL_SANDBOX_ENABLED = process.env.PAYPAL_PAYOUTS_ENABLED === 'true';
+
+/**
+ * Optional sandbox Personal account that receives every live sandbox payout. The seeded vendors
+ * use `.test` addresses, which PayPal leaves UNCLAIMED forever; pointing payouts at a real sandbox
+ * account lets a batch settle to SUCCESS. Must end in a sandbox domain (`@personal.example.com` or
+ * any address the sandbox owns); it is never used outside the sandbox base URL.
+ */
+export function payoutReceiverFor(vendorEmail: string): string {
+  const override = process.env.PAYPAL_PAYOUT_RECEIVER_EMAIL?.trim();
+  return override && override.includes('@') ? override : vendorEmail;
+}

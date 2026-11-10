@@ -1,15 +1,19 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import Link from 'next/link';
 import {
   ArrowRight,
-  CheckCircle2,
+  Bot,
+  Check,
   Loader2,
   RotateCcw,
+  Scale,
   ShieldAlert,
   ShieldCheck,
+  UserCheck,
 } from 'lucide-react';
-import { calculatePayoutFeeCents, formatCentsToUSD } from '@/lib/money';
+import { formatCentsToUSD } from '@/lib/money';
 import {
   ApiError,
   authorizePayout,
@@ -17,626 +21,366 @@ import {
   proposePlan,
   simulatePayment,
 } from '@/lib/apiClient';
+import { payoutCheck } from '@/lib/client/whatIf';
+import { formatDate } from '@/lib/client/states';
 import type { RunwayForecast, StateSnapshot } from '@/types';
-import type { CashPlan, CashPlanProposal } from '@/lib/plan/types';
+import type { CashPlanProposal } from '@/lib/plan/types';
 import { RunwayInstrument } from '@/components/runway/RunwayInstrument';
-import { Trail } from '@/components/ui/kit';
+import { useAppState } from '@/components/shell/AppState';
+import { btn } from '@/components/ui/kit';
 
 interface JourneyProps {
   snapshot: StateSnapshot;
   forecast: RunwayForecast;
   onSnapshot: (snapshot: StateSnapshot) => void;
-  onOpenAudit: () => void;
-  onOpenPayouts: () => void;
 }
 
-type Act = 1 | 2 | 3 | 4 | 5;
+const PAID_STATES = ['APPROVED', 'IN_FLIGHT', 'DISBURSED'];
 
-const ACTS: { n: Act; short: string; long: string }[] = [
-  { n: 1, short: 'Cliff', long: 'The cliff' },
-  { n: 2, short: 'Plan', long: 'The proposal' },
-  { n: 3, short: 'Break', long: 'Try to break it' },
-  { n: 4, short: 'Fix', long: 'Fix it' },
-  { n: 5, short: 'Receipt', long: 'The receipt' },
-];
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function formatDate(iso: string): string {
-  const [year, month, day] = iso.split('-').map(Number);
-  if (!year || !month || !day) return iso;
-  return `${day} ${MONTHS[month - 1]} ${year}`;
-}
-
-function verdictTone(verdict: CashPlan['verdict']): string {
-  return verdict === 'ACCEPTED' ? 'text-safe' : 'text-blocked';
-}
-
-export function Journey({
-  snapshot,
-  forecast,
-  onSnapshot,
-  onOpenAudit,
-  onOpenPayouts,
-}: JourneyProps) {
-  const [act, setAct] = useState<Act>(1);
+/**
+ * The guided demo: five numbered steps on one page, each with one button. Every step calls the
+ * real API, and the chart on the right redraws from the snapshot each call returns. A step's
+ * "done" state comes from the server's data where it can, so a refresh doesn't lose progress.
+ */
+export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
+  const { reset, resetting } = useAppState();
+  const [seen, setSeen] = useState(false);
   const [proposals, setProposals] = useState<CashPlanProposal | null>(null);
-  const [proposalLoading, setProposalLoading] = useState(false);
-  const [proposalError, setProposalError] = useState<string | null>(null);
-  const [attemptLoading, setAttemptLoading] = useState(false);
-  const [collectLoading, setCollectLoading] = useState(false);
-  const [approveLoading, setApproveLoading] = useState(false);
   const [blocked, setBlocked] = useState<{ deficitCents: number; message: string } | null>(null);
-  const [collected, setCollected] = useState(false);
-  const [approved, setApproved] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | 2 | 3 | 4 | 5>(null);
+  const [error, setError] = useState<{ step: number; text: string } | null>(null);
 
-  const acmeBill = useMemo(
-    () =>
-      snapshot.bills.find((bill) => bill.id === 'bill-acme-01') ??
-      snapshot.bills.find((bill) => bill.vendorName.toLowerCase().includes('acme')),
-    [snapshot.bills],
-  );
-  const apexInvoice = useMemo(
-    () =>
-      snapshot.invoices.find((invoice) => invoice.id === 'inv-apex-01') ??
-      snapshot.invoices.find((invoice) => invoice.status === 'OVERDUE'),
-    [snapshot.invoices],
-  );
-
-  const firstBreachDay = forecast.firstBreachDay;
-  const firstBreachDeficit = forecast.firstBreachDeficitCents ?? forecast.breachDeficitCents ?? 0;
-  const asOfDate = snapshot.demoConfig.asOfDate;
-  const cleared = snapshot.account.clearedBalanceCents;
+  const acme = snapshot.bills.find((b) => b.id === 'bill-acme-01');
+  const apex = snapshot.invoices.find((i) => i.id === 'inv-apex-01');
   const floor = snapshot.account.minReserveCents;
-  const breachBill = useMemo(
-    () =>
-      snapshot.bills.find(
-        (bill) =>
-          bill.dueDate === forecast.breachDate &&
-          ['PENDING', 'APPROVED', 'IN_FLIGHT'].includes(bill.status),
-      ),
-    [snapshot.bills, forecast.breachDate],
+  const cleared = snapshot.account.clearedBalanceCents;
+  const acmeAmount = acme ? formatCentsToUSD(acme.amountCents) : '$3,000.00';
+  const apexAmount = apex ? formatCentsToUSD(apex.amountCents) : '$1,500.00';
+
+  const acmePaid = !!acme && PAID_STATES.includes(acme.status);
+  const apexPaid = apex?.status === 'PAID';
+  const check = acme ? payoutCheck(snapshot, acme.id) : null;
+
+  const done = [
+    seen || !!proposals || !!blocked || apexPaid || acmePaid,
+    !!proposals || apexPaid || acmePaid,
+    !!blocked || apexPaid || acmePaid,
+    apexPaid,
+    acmePaid,
+  ];
+  const current = done.findIndex((d) => !d); // -1 when everything is done
+  const doneCount = done.filter(Boolean).length;
+
+  const run = useCallback(
+    async (step: 2 | 3 | 4 | 5, fn: () => Promise<void>) => {
+      setBusy(step);
+      setError(null);
+      try {
+        await fn();
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.snapshot) onSnapshot(caught.snapshot);
+        setError({ step, text: getErrorMessage(caught) });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [onSnapshot],
   );
 
-  const loadProposals = useCallback(async () => {
-    setProposalLoading(true);
-    setProposalError(null);
-    try {
-      const next = await proposePlan();
-      setProposals(next);
-    } catch (error) {
-      setProposalError(getErrorMessage(error));
-    } finally {
-      setProposalLoading(false);
-    }
-  }, []);
+  const askAi = () =>
+    run(2, async () => {
+      setProposals(await proposePlan());
+    });
 
-  useEffect(() => {
-    if (act >= 2 && act <= 4 && !proposals && !proposalLoading) {
-      void loadProposals();
-    }
-  }, [act, proposals, proposalLoading, loadProposals]);
-
-  const handleAttemptAcme = useCallback(async () => {
-    if (!acmeBill || attemptLoading) return;
-    setAttemptLoading(true);
-    setActionError(null);
-    try {
-      const response = await authorizePayout({
-        billId: acmeBill.id,
-        executionMode: 'SIMULATION',
-      });
-      onSnapshot(response.snapshot);
-      setApproved(true);
-      setAct(5);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        if (error.snapshot) onSnapshot(error.snapshot);
-        const rawDeficit = error.details?.deficitCents;
-        const deficitCents = typeof rawDeficit === 'number' ? rawDeficit : firstBreachDeficit;
-        if (error.code === 'RESERVE_BREACH_BLOCKED') {
-          setBlocked({ deficitCents, message: error.message });
-        } else {
-          setActionError(error.message);
+  const tryPayAcme = () =>
+    run(3, async () => {
+      if (!acme) return;
+      try {
+        const res = await authorizePayout({ billId: acme.id, executionMode: 'SIMULATION' });
+        onSnapshot(res.snapshot);
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.code === 'RESERVE_BREACH_BLOCKED') {
+          if (caught.snapshot) onSnapshot(caught.snapshot);
+          const raw = caught.details?.deficitCents;
+          setBlocked({
+            deficitCents: typeof raw === 'number' ? raw : (check?.deficitCents ?? 0),
+            message: caught.message,
+          });
+          return;
         }
-      } else {
-        setActionError(getErrorMessage(error));
+        throw caught;
       }
-    } finally {
-      setAttemptLoading(false);
-    }
-  }, [acmeBill, attemptLoading, firstBreachDeficit, onSnapshot]);
+    });
 
-  const handleCollectApex = useCallback(async () => {
-    if (!apexInvoice || collectLoading) return;
-    setCollectLoading(true);
-    setActionError(null);
-    try {
-      const response = await simulatePayment(apexInvoice.id);
-      onSnapshot(response.snapshot);
-      setCollected(true);
-      const refreshed = await proposePlan();
-      setProposals(refreshed);
-    } catch (error) {
-      if (error instanceof ApiError && error.snapshot) onSnapshot(error.snapshot);
-      setActionError(getErrorMessage(error));
-    } finally {
-      setCollectLoading(false);
-    }
-  }, [apexInvoice, collectLoading, onSnapshot]);
+  const collectApex = () =>
+    run(4, async () => {
+      if (!apex) return;
+      const res = await simulatePayment(apex.id);
+      onSnapshot(res.snapshot);
+    });
 
-  const handleApproveAcme = useCallback(async () => {
-    if (!acmeBill || approveLoading) return;
-    setApproveLoading(true);
-    setActionError(null);
-    try {
-      const response = await authorizePayout({
-        billId: acmeBill.id,
-        executionMode: 'SIMULATION',
-      });
-      onSnapshot(response.snapshot);
-      setApproved(true);
-      setAct(5);
-    } catch (error) {
-      if (error instanceof ApiError && error.snapshot) onSnapshot(error.snapshot);
-      setActionError(getErrorMessage(error));
-    } finally {
-      setApproveLoading(false);
-    }
-  }, [acmeBill, approveLoading, onSnapshot]);
+  const payAcme = () =>
+    run(5, async () => {
+      if (!acme) return;
+      const res = await authorizePayout({ billId: acme.id, executionMode: 'SIMULATION' });
+      onSnapshot(res.snapshot);
+    });
 
-  const safest = proposals?.plans.find((plan) => plan.id === 'safest') ?? proposals?.plans[0];
-  const allAccepted = proposals?.plans.every((plan) => plan.verdict === 'ACCEPTED') ?? false;
-  const sourceLabel =
-    proposals?.source === 'OPENROUTER_AI'
-      ? `AI · ${proposals.model}`
-      : 'Fallback templates · AI offline';
+  const restart = async () => {
+    await reset();
+    setSeen(false);
+    setProposals(null);
+    setBlocked(null);
+    setError(null);
+  };
 
-  const stamp = blocked
+  const stamp = forecast.hasReserveBreach
     ? {
-        label: 'Blocked by the floor',
-        value: `−${formatCentsToUSD(blocked.deficitCents)}`,
+        label: 'Below the reserve',
+        value: `−${formatCentsToUSD(forecast.firstBreachDeficitCents ?? forecast.breachDeficitCents ?? 0)}`,
       }
-    : forecast.hasReserveBreach
-      ? {
-          label: 'Below the floor',
-          value: `−${formatCentsToUSD(firstBreachDeficit)}`,
-        }
-      : null;
+    : null;
 
-  const logs = useMemo(
-    () =>
-      [...snapshot.auditLogs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 6),
-    [snapshot.auditLogs],
-  );
-
-  const headline = approved
-    ? 'The floor held. The receipt is the proof.'
-    : forecast.hasReserveBreach
-      ? `Cash crosses the floor on Day ${firstBreachDay}.`
-      : 'The floor holds.';
-
-  const breachSentence = forecast.hasReserveBreach ? (
-    <>
-      {breachBill ? (
-        <>
-          <strong className="font-medium text-ink">{breachBill.vendorName}</strong> (
-          {formatCentsToUSD(breachBill.amountCents)}) lands on {formatDate(breachBill.dueDate)}
-          .{' '}
-        </>
-      ) : null}
-      Cleared cash is {formatCentsToUSD(cleared)}. The {formatCentsToUSD(floor)} floor is crossed by{' '}
-      {formatCentsToUSD(firstBreachDeficit)}.
-    </>
-  ) : (
-    <>
-      Cleared cash is {formatCentsToUSD(cleared)}. The lowest projected balance is{' '}
-      {formatCentsToUSD(forecast.minBalanceCents)}, above the {formatCentsToUSD(floor)} floor.
-    </>
-  );
+  const aiLive = proposals?.source === 'OPENROUTER_AI';
+  const passing = proposals?.plans.filter((p) => p.verdict === 'ACCEPTED').length ?? 0;
 
   return (
-    <section className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6 sm:px-6 sm:pt-10">
-      <div
-        role="tablist"
-        aria-label="Demo acts"
-        className="grid grid-cols-5 gap-1 border-b border-rule"
-      >
-        {ACTS.map((item) => {
-          const isActive = act === item.n;
-          return (
-            <button
-              key={item.n}
-              type="button"
-              id={`act-tab-${item.n}`}
-              role="tab"
-              aria-selected={isActive}
-              aria-controls="act-panel"
-              onClick={() => setAct(item.n)}
-              className={`group flex flex-col items-start border-b-2 pb-2 pt-1 text-left transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper ${
-                isActive
-                  ? 'border-ink text-ink'
-                  : 'border-transparent text-ink-3 hover:border-rule-strong hover:text-ink-2'
-              }`}
-            >
-              <span className="mono text-[10px] leading-none">{`0${item.n}`}</span>
-              <span className="mt-1 text-[11px] font-medium leading-tight sm:text-xs">
-                <span className="sm:hidden">{item.short}</span>
-                <span className="hidden sm:inline">{item.long}</span>
+    <>
+      {/* ---------- 1. What this is, in one screen ---------- */}
+      <section className="mx-auto w-full max-w-6xl px-4 pt-8 sm:px-6 sm:pt-12">
+        <p className="text-xs font-medium uppercase tracking-[0.14em] text-ink-3">
+          PayPal AI Hackathon 2026
+        </p>
+        <h1 className="mt-2 max-w-3xl text-[34px] font-semibold leading-[1.06] tracking-[-0.03em] sm:text-[48px]">
+          An AI cash-flow assistant that can&apos;t spend your money.
+        </h1>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-2">
+          MerchOps forecasts a small business&apos;s next 30 days of cash. The AI suggests how to
+          avoid running short; fixed rules check every plan and every payment, and nothing is paid
+          until the merchant approves it.
+        </p>
+        <ul className="mt-6 grid max-w-3xl gap-3 sm:grid-cols-3">
+          {[
+            { icon: Bot, title: 'The AI suggests', body: 'Plans to chase invoices or move bills.' },
+            { icon: Scale, title: 'Rules decide', body: 'Code checks every plan and payment.' },
+            { icon: UserCheck, title: 'You approve', body: 'No money moves without a click.' },
+          ].map(({ icon: Icon, title, body }) => (
+            <li key={title} className="flex items-start gap-3 rounded-lg border border-rule bg-panel p-3">
+              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-2" aria-hidden="true" />
+              <span>
+                <span className="block text-sm font-medium text-ink">{title}</span>
+                <span className="block text-xs text-ink-2">{body}</span>
               </span>
-            </button>
-          );
-        })}
-      </div>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-      <div
-        id="act-panel"
-        role="tabpanel"
-        aria-labelledby={`act-tab-${act}`}
-        className="mt-6 grid gap-6 lg:grid-cols-12 lg:gap-10"
+      {/* ---------- 2. The guided demo ---------- */}
+      <section
+        aria-labelledby="try-h"
+        className="mx-auto mt-10 grid w-full max-w-6xl gap-6 px-4 pb-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10"
       >
-        <div className="lg:col-span-5">
-          {act === 1 && (
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h1 className="text-[32px] font-semibold leading-[1.06] tracking-[-0.03em] sm:text-[42px]">
-                {headline}
-              </h1>
-              <p className="mt-3 text-sm leading-relaxed text-ink-2">{breachSentence}</p>
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setAct(2)}
-                  className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                >
-                  See the AI&apos;s plan
+              <h2 id="try-h" className="text-xl font-semibold">
+                Try it: 5 steps, about 2 minutes
+              </h2>
+              <p className="mt-1 text-sm text-ink-2">
+                {doneCount === 5
+                  ? 'All done. Restart any time.'
+                  : `${doneCount} of 5 done. Each button calls the real server.`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void restart()}
+              disabled={resetting}
+              className={btn.small}
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              {resetting ? 'Restarting…' : 'Restart demo'}
+            </button>
+          </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-rule" aria-hidden="true">
+            <div
+              className="h-full rounded-full bg-safe transition-[width] duration-500"
+              style={{ width: `${(doneCount / 5) * 100}%` }}
+            />
+          </div>
+
+          <ol className="mt-5 space-y-3">
+            <Step n={1} title="See the problem" done={done[0]} current={current === 0}>
+              <p>
+                The business has <Money>{formatCentsToUSD(cleared)}</Money> and wants to keep at
+                least <Money>{formatCentsToUSD(floor)}</Money> as a safety reserve. On{' '}
+                {acme ? formatDate(acme.dueDate) : 'Day 10'}, a <Money>{acmeAmount}</Money> bill
+                from Acme Supplies would take cash below that line. That&apos;s the red bar in the
+                chart.
+              </p>
+              {current === 0 && (
+                <button type="button" onClick={() => setSeen(true)} className={`${btn.primary} mt-3`}>
+                  Got it, next step
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </button>
-                <button
-                  type="button"
-                  onClick={onOpenPayouts}
-                  className="rounded-md border border-rule-strong px-4 py-2.5 text-sm font-medium text-ink-2 transition-colors duration-200 hover:bg-panel hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                >
-                  Open the payout guardrail
-                </button>
-              </div>
-              <p className="mt-4 text-xs text-ink-3">
-                AI proposes. Rules decide. Nothing moves without you.
-              </p>
-            </div>
-          )}
-
-          {act === 2 && (
-            <div>
-              <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl">
-                The AI proposes. The rules decide.
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-ink-2">
-                Three plans, checked against the same deterministic runway before any money moves.
-              </p>
-
-              <div className="mt-4 overflow-hidden rounded-lg border border-rule bg-panel">
-                <div className="flex items-center justify-between border-b border-rule px-4 py-2.5">
-                  <span className="text-sm font-medium">Proposal</span>
-                  <span
-                    className="mono max-w-[60%] truncate text-[10px] text-ink-3"
-                    title={proposals?.fallbackReason ?? proposals?.model}
-                  >
-                    {sourceLabel}
-                  </span>
-                </div>
-                {proposalLoading ? (
-                  <div className="flex items-center gap-2 px-4 py-6 text-xs text-ink-3">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                    Asking the model for plans, then checking each against the runway…
-                  </div>
-                ) : proposalError ? (
-                  <div className="px-4 py-4 text-xs text-blocked">
-                    <p>{proposalError}</p>
-                    <button
-                      type="button"
-                      onClick={() => void loadProposals()}
-                      className="mt-2 inline-flex items-center gap-1.5 font-medium underline underline-offset-2"
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                      Retry
-                    </button>
-                  </div>
-                ) : (
-                  proposals?.plans.map((plan) => (
-                    <div key={plan.id} className="border-b border-rule px-4 py-3 last:border-b-0">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-sm font-medium">{plan.title}</span>
-                        <span className={`text-xs font-medium ${verdictTone(plan.verdict)}`}>
-                          {plan.verdict === 'ACCEPTED'
-                            ? 'Passes the rules'
-                            : 'Refused by the rules'}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-ink-2">{plan.subtitle}</p>
-                      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-3">
-                        <span>Lowest {formatCentsToUSD(plan.minProjectedBalanceCents)}</span>
-                        {plan.breachDay ? (
-                          <span>Breach Day {plan.breachDay}</span>
-                        ) : (
-                          <span>No breach</span>
-                        )}
-                        <span>{plan.origin === 'AI' ? 'Written by AI' : 'Fallback template'}</span>
-                      </div>
-                      {plan.assumptions.length > 0 && (
-                        <p className="mt-1 text-[11px] text-ink-3">
-                          Assumes: {plan.assumptions.join(' ')}
-                        </p>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div
-                className={`mt-3 rounded-lg border p-3 ${
-                  safest?.verdict === 'ACCEPTED'
-                    ? 'border-safe bg-safe-field'
-                    : 'border-blocked bg-blocked-field'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {safest?.verdict === 'ACCEPTED' ? (
-                    <ShieldCheck className="h-3.5 w-3.5 text-safe" aria-hidden="true" />
-                  ) : (
-                    <ShieldAlert className="h-3.5 w-3.5 text-blocked" aria-hidden="true" />
-                  )}
-                  <p className="text-xs font-semibold">Rules decided</p>
-                </div>
-                <p className="mt-1 text-[11px] leading-relaxed text-ink-2">
-                  {proposals
-                    ? `${proposals.plans.filter((p) => p.verdict === 'ACCEPTED').length} of ${proposals.plans.length} plans pass. ${(
-                        safest?.rulesFailed[0] ??
-                        safest?.rulesPassed[safest.rulesPassed.length - 1] ??
-                        ''
-                      ).replace(/^RULE_[A-Z_]+:\s*/, '')}`
-                    : 'Waiting for the deterministic verdict.'}
-                </p>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setAct(3)}
-                  className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                >
-                  Try to pay Acme anyway
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAct(1)}
-                  className="text-xs text-ink-3 underline underline-offset-4 hover:text-ink-2"
-                >
-                  Back to the cliff
-                </button>
-              </div>
-            </div>
-          )}
-
-          {act === 3 && (
-            <div>
-              <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl">
-                Try to break it.
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-ink-2">
-                The merchant wants Acme paid today. The payout guardrail runs the same numbers
-                before it moves a cent.
-              </p>
-
-              {blocked ? (
-                <div className="mt-4 rounded-lg border-2 border-blocked bg-blocked-field p-4">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="h-4 w-4 text-blocked" aria-hidden="true" />
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blocked">
-                      Blocked by the floor
-                    </p>
-                  </div>
-                  <p className="money mt-2 text-3xl font-semibold text-blocked">
-                    {formatCentsToUSD(blocked.deficitCents)} short
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-2">
-                    {blocked.message}
-                    {acmeBill
-                      ? ` Includes the ${formatCentsToUSD(calculatePayoutFeeCents(acmeBill.amountCents))} estimated PayPal payout fee, so the fee can never be what breaks the floor.`
-                      : ''}
-                  </p>
-                  <p className="mono mt-2 text-[10px] text-ink-3">403 · RESERVE_BREACH_BLOCKED</p>
-                </div>
-              ) : (
-                <div className="mt-4 rounded-lg border border-rule bg-panel p-4">
-                  <p className="text-xs text-ink-2">
-                    Acme Supplies is due {acmeBill ? formatDate(acmeBill.dueDate) : 'on Day 10'} for{' '}
-                    {acmeBill ? formatCentsToUSD(acmeBill.amountCents) : '—'}. Approving it today
-                    would take the balance below the {formatCentsToUSD(floor)} floor.
-                  </p>
-                </div>
               )}
+            </Step>
 
-              {actionError && (
-                <p role="alert" className="mt-3 text-xs text-blocked">
-                  {actionError}
-                </p>
-              )}
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                {blocked ? (
-                  <button
-                    type="button"
-                    onClick={() => setAct(4)}
-                    className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    Go to the fix
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void handleAttemptAcme()}
-                    disabled={attemptLoading || !acmeBill}
-                    className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    {attemptLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-                    ) : (
-                      <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-                    )}
-                    {attemptLoading
-                      ? 'Evaluating…'
-                      : `Pay Acme ${acmeBill ? formatCentsToUSD(acmeBill.amountCents) : ''}`}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={onOpenPayouts}
-                  className="text-xs text-ink-3 underline underline-offset-4 hover:text-ink-2"
-                >
-                  Open the payout guardrail
-                </button>
-              </div>
-            </div>
-          )}
-
-          {act === 4 && (
-            <div>
-              <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl">
-                Fix it.
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-ink-2">
-                Collect the overdue invoice. The cash arrives before Acme is due.
+            <Step n={2} title="Ask the AI for a plan" done={done[1]} current={current === 1}>
+              <p>
+                The AI writes three plans. Then plain code replays each one on the forecast and
+                decides whether it is safe. The AI never does the arithmetic.
               </p>
-
-              {!collected ? (
-                <div className="mt-4 rounded-lg border border-rule bg-panel p-4">
-                  <p className="text-xs leading-relaxed text-ink-2">
-                    {apexInvoice ? (
+              {current === 1 && (
+                <ActionButton onClick={askAi} busy={busy === 2} busyLabel="The AI is writing plans (free models take 10–50s)…">
+                  <Bot className="h-4 w-4" aria-hidden="true" />
+                  Ask the AI
+                </ActionButton>
+              )}
+              {proposals && (
+                <div className="mt-3 overflow-hidden rounded-md border border-rule bg-paper">
+                  <p className="border-b border-rule px-3 py-2 text-xs text-ink-2">
+                    {aiLive ? (
                       <>
-                        <strong className="font-medium text-ink">{apexInvoice.customerName}</strong>{' '}
-                        owes {formatCentsToUSD(apexInvoice.amountCents)} on invoice{' '}
-                        <span className="mono text-[11px]">{apexInvoice.invoiceNumber}</span>.
-                        Collecting it lifts the runway above the floor.
+                        Written live by <span className="mono">{proposals.model}</span>
                       </>
                     ) : (
-                      'No overdue invoice is available in this scenario.'
-                    )}
+                      <>AI unavailable, so built-in templates were used</>
+                    )}{' '}
+                    · {passing} of {proposals.plans.length} pass the rules
                   </p>
+                  <ul>
+                    {proposals.plans.map((plan) => (
+                      <li key={plan.id} className="border-t border-rule px-3 py-2 first:border-t-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-sm font-medium text-ink">{plan.title}</span>
+                          <Verdict ok={plan.verdict === 'ACCEPTED'} />
+                        </div>
+                        <p className="mt-0.5 text-xs text-ink-2">
+                          Lowest balance {formatCentsToUSD(plan.minProjectedBalanceCents)}
+                          {plan.verdict !== 'ACCEPTED' && plan.rulesFailed[0]
+                            ? ` · ${plan.rulesFailed[0].replace(/^RULE_[A-Z_]+:\s*/, '')}`
+                            : ''}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link href="/plans" className="block border-t border-rule px-3 py-2 text-xs text-ink-2 hover:text-ink">
+                    See every rule each plan was checked against →
+                  </Link>
                 </div>
-              ) : (
-                <div className="mt-4 rounded-lg border border-safe bg-safe-field p-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-safe" aria-hidden="true" />
-                    <p className="text-xs font-semibold text-safe">The floor holds</p>
-                  </div>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-2">
-                    Cleared cash is {formatCentsToUSD(cleared)}. The lowest projected balance is{' '}
-                    {formatCentsToUSD(forecast.minBalanceCents)}. All three plans are now{' '}
-                    {allAccepted ? 'accepted' : 're-evaluated'} by the rules.
+              )}
+              <StepError error={error} step={2} />
+            </Step>
+
+            <Step n={3} title="Try to pay the bill anyway" done={done[2]} current={current === 2}>
+              <p>
+                Pretend you ignore the warning and pay Acme&apos;s <Money>{acmeAmount}</Money>{' '}
+                today. The server runs the safety check itself, so a button can&apos;t skip it.
+              </p>
+              {current === 2 && (
+                <ActionButton onClick={tryPayAcme} busy={busy === 3} busyLabel="Checking…">
+                  <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                  Pay Acme {acmeAmount} now
+                </ActionButton>
+              )}
+              {blocked && (
+                <div className="mt-3 rounded-md border-2 border-blocked bg-blocked-field p-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-blocked">
+                    <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                    Refused: {formatCentsToUSD(blocked.deficitCents)} short of the reserve
+                  </p>
+                  <p className="mt-1 text-xs text-ink-2">
+                    The server said no (HTTP 403). PayPal&apos;s payout fee is counted too, so the
+                    fee can never be what breaks the reserve. No money moved.
                   </p>
                 </div>
               )}
+              <StepError error={error} step={3} />
+            </Step>
 
-              {actionError && (
-                <p role="alert" className="mt-3 text-xs text-blocked">
-                  {actionError}
+            <Step n={4} title="Collect the overdue invoice" done={done[3]} current={current === 3}>
+              <p>
+                Apex Corp owes <Money>{apexAmount}</Money>
+                {apex && apex.daysOverdue > 0 ? ` and is ${apex.daysOverdue} days late` : ''}. In
+                real use you&apos;d send an AI-drafted
+                reminder (see{' '}
+                <Link href="/invoices/inv-apex-01" className="underline">
+                  the invoice
+                </Link>
+                ). Here, mark it as paid.
+              </p>
+              {current === 3 && (
+                <ActionButton onClick={collectApex} busy={busy === 4} busyLabel="Collecting…">
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                  Mark {apexAmount} as received
+                </ActionButton>
+              )}
+              {apexPaid && (
+                <p className="mt-3 rounded-md border border-safe/40 bg-safe-field p-3 text-sm text-ink">
+                  Cash is now <Money>{formatCentsToUSD(cleared)}</Money>. The chart turned green.
+                  The lowest point is <Money>{formatCentsToUSD(forecast.minBalanceCents)}</Money>,
+                  above the reserve.
                 </p>
               )}
+              <StepError error={error} step={4} />
+            </Step>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                {!collected ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleCollectApex()}
-                    disabled={collectLoading || !apexInvoice}
-                    className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    {collectLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-                    ) : (
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    )}
-                    {collectLoading
-                      ? 'Collecting…'
-                      : `Collect ${apexInvoice ? apexInvoice.customerName : 'overdue invoice'} ${
-                          apexInvoice ? formatCentsToUSD(apexInvoice.amountCents) : ''
-                        }`}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void handleApproveAcme()}
-                    disabled={approveLoading || !acmeBill}
-                    className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    {approveLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-                    ) : (
-                      <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                    )}
-                    {approveLoading
-                      ? 'Approving…'
-                      : `Approve Acme ${acmeBill ? formatCentsToUSD(acmeBill.amountCents) : ''}`}
-                  </button>
-                )}
-                {collected && (
-                  <button
-                    type="button"
-                    onClick={() => setAct(5)}
-                    className="text-xs text-ink-3 underline underline-offset-4 hover:text-ink-2"
-                  >
-                    Skip to the receipt
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {act === 5 && (
-            <div>
-              <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl">
-                The receipt.
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-ink-2">
-                Every decision is in the append-only audit log, including the one the floor refused.
+            <Step n={5} title="Pay the bill again" done={done[4]} current={current === 4}>
+              <p>
+                Same button, same check. This time it passes
+                {check && !check.wouldBreach && !acmePaid
+                  ? `, with ${formatCentsToUSD(check.bufferCents)} to spare`
+                  : ''}
+                .
               </p>
+              {current === 4 && (
+                <ActionButton onClick={payAcme} busy={busy === 5} busyLabel="Approving…">
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  Approve Acme {acmeAmount}
+                </ActionButton>
+              )}
+              {acmePaid && (
+                <p className="mt-3 rounded-md border border-safe/40 bg-safe-field p-3 text-sm text-ink">
+                  Approved and paid. Every step you took, including the refused payment, is
+                  recorded in the{' '}
+                  <Link href="/ledger" className="font-medium underline">
+                    audit log
+                  </Link>
+                  .
+                </p>
+              )}
+              <StepError error={error} step={5} />
+            </Step>
+          </ol>
 
-              <div className="mt-4 rounded-lg border border-rule bg-panel px-4 py-1">
-                <Trail logs={logs} empty="No events yet. Try the act again." />
-              </div>
-              <p className="mt-2 text-[11px] text-ink-3">
-                {logs.length} events · append-only · no edits
+          {current === -1 && (
+            <div className="mt-5 rounded-lg border border-rule bg-panel p-4">
+              <p className="text-sm font-medium text-ink">Want proof it can&apos;t be tricked?</p>
+              <p className="mt-1 text-sm text-ink-2">
+                12 attacks (fake instructions hidden in an invoice, a hidden fee, a double click…)
+                run against the real safety code.
               </p>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onOpenAudit}
-                  className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                >
-                  Open the ledger
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/bench" className={btn.primary}>
+                  Run the 12 safety tests
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAct(1)}
-                  className="text-xs text-ink-3 underline underline-offset-4 hover:text-ink-2"
-                >
-                  Start over
-                </button>
+                </Link>
+                <Link href="/ledger" className={btn.secondary}>
+                  Open the audit log
+                </Link>
               </div>
             </div>
           )}
         </div>
 
-        <div className="lg:col-span-7">
+        {/* The chart stays in view while the steps scroll. */}
+        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           <div className="rounded-lg border border-rule bg-panel p-4 sm:p-5">
             <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-medium">30-day runway</h2>
-              <span className="mono text-[11px] text-ink-3">as of {formatDate(asOfDate)}</span>
+              <h2 className="text-sm font-medium">Cash over the next 30 days</h2>
+              <span className="text-xs text-ink-3">from {formatDate(snapshot.demoConfig.asOfDate)}</span>
             </div>
             <RunwayInstrument
               className="mt-4"
@@ -644,27 +388,137 @@ export function Journey({
               floorCents={floor}
               openingBalanceCents={cleared}
               minBalanceCents={forecast.minBalanceCents}
-              firstBreachDay={firstBreachDay}
-              firstBreachDeficitCents={firstBreachDeficit}
+              firstBreachDay={forecast.firstBreachDay}
+              firstBreachDeficitCents={forecast.firstBreachDeficitCents}
               stamp={stamp}
             />
-            <div className="mt-4 grid grid-cols-3 divide-x divide-rule border-t border-rule pt-3">
-              <Readout label="Cleared" value={formatCentsToUSD(cleared)} />
-              <Readout label="Floor" value={formatCentsToUSD(floor)} />
+            <dl className="mt-4 grid grid-cols-3 divide-x divide-rule border-t border-rule pt-3">
+              <Readout label="Cash today" value={formatCentsToUSD(cleared)} />
+              <Readout label="Safety reserve" value={formatCentsToUSD(floor)} />
               <Readout
-                label={firstBreachDay !== undefined ? `Lowest · Day ${firstBreachDay}` : 'Lowest'}
+                label="Lowest point"
                 value={formatCentsToUSD(forecast.minBalanceCents)}
                 tone={forecast.hasReserveBreach ? 'blocked' : 'safe'}
               />
-            </div>
+            </dl>
+            <p
+              className={`mt-3 rounded-md px-3 py-2 text-sm font-medium ${
+                forecast.hasReserveBreach ? 'bg-blocked-field text-blocked' : 'bg-safe-field text-safe'
+              }`}
+            >
+              {forecast.hasReserveBreach
+                ? `Cash drops below the reserve on Day ${forecast.firstBreachDay}.`
+                : 'Cash stays above the reserve for all 30 days.'}
+            </p>
           </div>
-          <p className="mt-2 text-[11px] text-ink-3">
-            Deterministic forecast. Integer cents. No LLM arithmetic.
+          <p className="mt-2 text-xs text-ink-3">
+            The dashed line is the safety reserve. Every number is computed by code in whole cents.
           </p>
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function Step({
+  n,
+  title,
+  done,
+  current,
+  children,
+}: {
+  n: number;
+  title: string;
+  done: boolean;
+  current: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <li
+      aria-current={current ? 'step' : undefined}
+      className={`rounded-lg border p-4 transition-colors ${
+        current
+          ? 'border-ink bg-panel shadow-sm'
+          : done
+            ? 'border-rule bg-panel'
+            : 'border-rule opacity-60'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-semibold ${
+            done
+              ? 'bg-safe text-paper'
+              : current
+                ? 'bg-ink text-paper'
+                : 'text-ink-3 ring-1 ring-inset ring-rule-strong'
+          }`}
+          aria-hidden="true"
+        >
+          {done ? <Check className="h-4 w-4" strokeWidth={3} /> : n}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-ink">
+            <span className="sr-only">Step {n}{done ? ', done' : ''}: </span>
+            {title}
+          </h3>
+          <div className="mt-1 text-sm leading-relaxed text-ink-2">{children}</div>
         </div>
       </div>
-    </section>
+    </li>
   );
+}
+
+function ActionButton({
+  onClick,
+  busy,
+  busyLabel,
+  children,
+}: {
+  onClick: () => void;
+  busy: boolean;
+  busyLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={busy} className={`${btn.primary} mt-3`}>
+      {busy ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          {busyLabel}
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  );
+}
+
+function StepError({ error, step }: { error: { step: number; text: string } | null; step: number }) {
+  if (!error || error.step !== step) return null;
+  return (
+    <p role="alert" className="mt-2 text-sm text-blocked">
+      {error.text}
+    </p>
+  );
+}
+
+function Verdict({ ok }: { ok: boolean }) {
+  return ok ? (
+    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-safe">
+      <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+      Safe
+    </span>
+  ) : (
+    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blocked">
+      <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+      Refused
+    </span>
+  );
+}
+
+function Money({ children }: { children: React.ReactNode }) {
+  return <strong className="money font-semibold text-ink">{children}</strong>;
 }
 
 function Readout({
@@ -676,12 +530,11 @@ function Readout({
   value: string;
   tone?: 'default' | 'safe' | 'blocked';
 }) {
-  const toneClass =
-    tone === 'safe' ? 'text-safe' : tone === 'blocked' ? 'text-blocked' : 'text-ink';
+  const toneClass = tone === 'safe' ? 'text-safe' : tone === 'blocked' ? 'text-blocked' : 'text-ink';
   return (
     <div className="px-3 first:pl-0 last:pr-0">
-      <p className="text-[10px] text-ink-3">{label}</p>
-      <p className={`money mt-0.5 text-sm font-semibold ${toneClass}`}>{value}</p>
+      <dt className="text-xs text-ink-3">{label}</dt>
+      <dd className={`money mt-0.5 text-base font-semibold ${toneClass}`}>{value}</dd>
     </div>
   );
 }

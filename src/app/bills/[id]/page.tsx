@@ -41,7 +41,7 @@ function policyFor(bill: Bill, snapshot: StateSnapshot) {
   })();
 }
 
-/** The payout guardrail, on the page: pick the rail, see the floor check, confirm, authorize. */
+/** The payout guardrail, on the page: pick the rail, see the reserve check, confirm, authorize. */
 function NextStep({
   bill,
   snapshot,
@@ -111,7 +111,7 @@ function NextStep({
             `${formatCentsToUSD(bill.amountCents)} went to ${bill.vendorName}. The ledger was debited only once settlement was confirmed.`}
         </p>
         <Link href="/ledger" className={`${btn.secondary} mt-4`}>
-          See it in the ledger
+          See it in the audit log
         </Link>
       </section>
     );
@@ -178,7 +178,7 @@ function NextStep({
           : `Pay ${bill.vendorName}`}
       </h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-2">
-        Due {formatDate(bill.dueDate)}, in {bill.daysUntilDue} days. The floor check runs here and
+        Due {formatDate(bill.dueDate)}, in {bill.daysUntilDue} days. The reserve check runs here and
         again on the server before anything reaches PayPal.
       </p>
 
@@ -231,14 +231,14 @@ function NextStep({
         <div className="mt-4 rounded-md border-2 border-blocked bg-blocked-field p-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-blocked">
             <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-            Blocked by the floor
+            Blocked by the reserve
           </p>
           <p className="money mt-1 text-2xl font-semibold text-blocked">
             {formatCentsToUSD(policy.deficitCents)} short
           </p>
           <p className="mt-1 text-sm leading-relaxed text-ink-2">
             Paying it now would leave {formatCentsToUSD(policy.postPayoutBalanceCents)}, under the{' '}
-            {formatCentsToUSD(snapshot.account.minReserveCents)} floor. Bring cash in first.
+            {formatCentsToUSD(snapshot.account.minReserveCents)} reserve. Bring cash in first.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {overdue && (
@@ -344,7 +344,7 @@ function MoneyPanel({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot })
           ? 'Where the money is'
           : bill.status === 'IN_FLIGHT'
             ? 'Reserved, not debited'
-            : 'The floor check'}
+            : 'The reserve check'}
       </h2>
       <p className="mt-1 text-xl font-semibold text-ink">
         {paid
@@ -352,7 +352,7 @@ function MoneyPanel({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot })
           : bill.status === 'IN_FLIGHT'
             ? 'Held until PayPal confirms'
             : policy.wouldBreach
-              ? `${formatCentsToUSD(policy.deficitCents)} under the floor`
+              ? `${formatCentsToUSD(policy.deficitCents)} under the reserve`
               : `${formatCentsToUSD(policy.bufferCents)} to spare`}
       </p>
       {!paid && (
@@ -379,7 +379,7 @@ function MoneyPanel({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot })
             total
             tone={policy.wouldBreach ? 'blocked' : 'neutral'}
           />
-          <Line label="Reserve floor" value={formatCentsToUSD(snapshot.account.minReserveCents)} />
+          <Line label="Safety reserve" value={formatCentsToUSD(snapshot.account.minReserveCents)} />
         </dl>
       )}
       {paid && (
@@ -392,11 +392,11 @@ function MoneyPanel({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot })
           Request references
         </summary>
         <dl className="mt-2">
-          <Ref label="PayPal-Request-Id" value={derivePayoutRequestId(bill.id)} />
+          <Ref label="PayPal-Request-Id" value={derivePayoutRequestId(bill.id, snapshot.demoConfig.payoutEpoch)} />
           <Ref label="Verified batch" value={snapshot.capabilities.verifiedBatchId} />
         </dl>
         <p className="mt-1 text-xs text-ink-3">
-          The same id on every retry, so a double click can&apos;t pay twice.
+          The same id on every retry in this demo run, so a double click can&apos;t pay twice.
         </p>
       </details>
     </section>
@@ -420,7 +420,7 @@ function BillRoom({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot }) {
         meta={
           <>
             {open && policy.wouldBreach ? (
-              <StatusPill label="Blocked by the floor" tone="blocked" />
+              <StatusPill label="Blocked by the reserve" tone="blocked" />
             ) : (
               <StatusPill label={status.label} tone={status.tone} />
             )}
@@ -462,18 +462,18 @@ function BillRoom({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot }) {
               stamp={
                 after.clearedCents < snapshot.account.minReserveCents
                   ? {
-                      label: 'Blocked by the floor',
+                      label: 'Blocked by the reserve',
                       value: `−${formatCentsToUSD(snapshot.account.minReserveCents - after.clearedCents)}`,
                     }
                   : undefined
               }
-              caption="A preview from the same deterministic forecast, PayPal’s fee counted as the floor check counts it. Nothing has moved."
+              caption="A preview from the same deterministic forecast, PayPal’s fee counted as the reserve check counts it. Nothing has moved."
             />
           )}
           <Section
             id="trail"
             title="History"
-            description="Every step this bill took, including the ones the floor refused. Newest first."
+            description="Every step this bill took, including the ones the reserve refused. Newest first."
           >
             <Trail
               logs={trail}

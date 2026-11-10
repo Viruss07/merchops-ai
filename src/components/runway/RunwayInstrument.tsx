@@ -42,12 +42,12 @@ export function RunwayInstrument({
 
   const ariaLabel = [
     `30-day cash runway. Cleared cash ${formatCentsToUSD(openingBalanceCents)}.`,
-    `Reserve floor ${formatCentsToUSD(floorCents)}.`,
+    `Safety reserve ${formatCentsToUSD(floorCents)}.`,
     firstBreachDay !== undefined
-      ? `Cash crosses the floor on day ${firstBreachDay}, reaching a low of ${formatCentsToUSD(
+      ? `Cash drops below the reserve on day ${firstBreachDay}, reaching a low of ${formatCentsToUSD(
           minBalanceCents,
-        )}${firstBreachDeficitCents ? `, ${formatCentsToUSD(firstBreachDeficitCents)} below the floor` : ''}.`
-      : `The lowest projected balance is ${formatCentsToUSD(minBalanceCents)}, above the floor.`,
+        )}${firstBreachDeficitCents ? `, ${formatCentsToUSD(firstBreachDeficitCents)} below the reserve` : ''}.`
+      : `The lowest projected balance is ${formatCentsToUSD(minBalanceCents)}, above the reserve.`,
   ].join(' ');
 
   return (
@@ -86,9 +86,9 @@ export function RunwayInstrument({
           data-floor
           style={{ bottom: `${floorPct}%` }}
         >
-          <div className="relative border-t border-dashed border-ink-3">
+          <div className="relative border-t-2 border-dashed border-ink-2">
             <span className="absolute -top-2.5 left-0 bg-panel px-1.5 text-[10px] font-medium text-ink-2">
-              Floor {formatCentsToUSD(floorCents)}
+              Safety reserve {formatCentsToUSD(floorCents)}
             </span>
           </div>
         </div>
@@ -135,15 +135,15 @@ export function RunwayInstrument({
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-ink-3">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-[1px] bg-safe" aria-hidden="true" />
-          Above floor
+          Above the reserve
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-[1px] bg-risk" aria-hidden="true" />
-          Within 15% of floor
+          Close to it
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-[1px] bg-blocked" aria-hidden="true" />
-          Below floor
+          Below the reserve
         </span>
       </div>
     </div>

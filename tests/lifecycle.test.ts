@@ -103,3 +103,20 @@ test('webhook: rejects missing signature headers before verification', async () 
     else process.env.PAYPAL_WEBHOOK_ID = previous;
   }
 });
+
+test('idempotency: a demo reset starts a fresh PayPal-Request-Id, a double click does not', async () => {
+  const { demoStore } = await import('../src/lib/store');
+  const before = demoStore.getSnapshot().demoConfig.payoutEpoch;
+  assert.equal(demoStore.getSnapshot().demoConfig.payoutEpoch, before);
+  assert.equal(
+    derivePayoutRequestId('bill-cloud-02', before),
+    derivePayoutRequestId('bill-cloud-02', before),
+  );
+  demoStore.resetDemoData();
+  const after = demoStore.getSnapshot().demoConfig.payoutEpoch;
+  assert.notEqual(after, before);
+  assert.notEqual(
+    derivePayoutRequestId('bill-cloud-02', after),
+    derivePayoutRequestId('bill-cloud-02', before),
+  );
+});

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Ledger',
+  title: 'Audit log',
   description: 'The append-only record of every decision.',
 };
 

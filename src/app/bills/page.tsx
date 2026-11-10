@@ -34,7 +34,7 @@ export default function BillsPage() {
               meta={
                 <>
                   {blocked.length > 0 && (
-                    <StatusPill label={`${blocked.length} blocked by the floor`} tone="blocked" />
+                    <StatusPill label={`${blocked.length} blocked by the reserve`} tone="blocked" />
                   )}
                   <span>
                     {open.length} open · {bills.length - open.length} paid
@@ -48,14 +48,14 @@ export default function BillsPage() {
                 />
               }
             >
-              Suppliers you pay through PayPal Payouts. Each payout goes through the floor check,
+              Suppliers you pay through PayPal Payouts. Each payout goes through the reserve check,
               PayPal&apos;s fee included, and only your approval sends it.
             </PageHeader>
 
             <p className="mt-6 text-sm text-ink-2">
               Each checked as if paid today, against{' '}
               {formatCentsToUSD(snapshot.account.clearedBalanceCents)} cleared and the{' '}
-              {formatCentsToUSD(snapshot.account.minReserveCents)} floor.
+              {formatCentsToUSD(snapshot.account.minReserveCents)} reserve.
             </p>
             <ul className="mt-4 overflow-hidden rounded-lg border border-rule bg-panel">
               {bills.map((bill) => {
@@ -72,7 +72,7 @@ export default function BillsPage() {
                     status={
                       floorBlocked ? (
                         <StatusPill
-                          label={`Floor · ${formatCentsToUSD(policy.deficitCents)} short`}
+                          label={`Reserve · ${formatCentsToUSD(policy.deficitCents)} short`}
                           tone="blocked"
                         />
                       ) : (
@@ -87,7 +87,7 @@ export default function BillsPage() {
             </ul>
             <p className="mt-3 text-xs text-ink-3">
               Payouts already approved or in flight are reserved first, so two payouts can&apos;t
-              each pass on their own and break the floor together. PayPal&apos;s fee is always
+              each pass on their own and break the reserve together. PayPal&apos;s fee is always
               counted.
             </p>
           </Page>

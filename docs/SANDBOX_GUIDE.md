@@ -101,11 +101,11 @@ node scripts/migrate.mjs
 sequenceDiagram
     autonumber
     actor Judge as Judge / Merchant
-    participant App as MerchOps AI (/demo)
+    participant App as MerchOps AI (home page)
     participant PayPal as PayPal Sandbox API
     actor Buyer as Buyer (Customer)
 
-    Judge->>App: Clicks "Run it Live" on /demo
+    Judge->>App: Clicks "Run it on PayPal" on the home page
     App->>PayPal: POST /v2/invoicing/invoices (Draft $15.00)
     PayPal-->>App: Invoice ID (INV2-XXXX)
     App->>PayPal: POST /v2/invoicing/invoices/{id}/send

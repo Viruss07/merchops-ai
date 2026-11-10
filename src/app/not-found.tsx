@@ -15,7 +15,7 @@ export default function NotFound() {
             Back to MerchOps
           </Link>
           <Link href="/ledger" className={btn.secondary}>
-            Open the ledger
+            Open the audit log
           </Link>
         </div>
       </div>

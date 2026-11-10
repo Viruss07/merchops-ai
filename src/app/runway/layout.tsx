@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Runway',
-  description: 'The 30-day cash runway against the reserve floor.',
+  title: 'Cash forecast',
+  description: 'The 30-day cash runway against the safety reserve.',
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {

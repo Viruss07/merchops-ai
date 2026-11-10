@@ -74,7 +74,7 @@ function Ledger({ snapshot }: { snapshot: StateSnapshot }) {
   return (
     <Page>
       <PageHeader
-        title="Ledger"
+        title="Audit log"
         meta={<span>{all.length} events · append-only, no edits or deletes</span>}
         aside={
           <Figure
@@ -84,7 +84,7 @@ function Ledger({ snapshot }: { snapshot: StateSnapshot }) {
           />
         }
       >
-        Every decision MerchOps made or you approved, including the payouts the floor refused. The
+        Every decision MerchOps made or you approved, including the payouts the reserve refused. The
         database rejects updates and deletes on this table.
       </PageHeader>
 
@@ -111,7 +111,7 @@ function Ledger({ snapshot }: { snapshot: StateSnapshot }) {
         </div>
         <div className="flex gap-2">
           <label className="relative flex-1 lg:w-64 lg:flex-none">
-            <span className="sr-only">Search the ledger</span>
+            <span className="sr-only">Search the audit log</span>
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3"
               aria-hidden="true"
@@ -219,7 +219,7 @@ function Ledger({ snapshot }: { snapshot: StateSnapshot }) {
 
 export default function LedgerPage() {
   return (
-    <WithState label="Loading the ledger">
+    <WithState label="Loading the audit log">
       {({ snapshot }) => <Ledger snapshot={snapshot} />}
     </WithState>
   );
