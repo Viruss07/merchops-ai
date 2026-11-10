@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The runway is the instrument: a cool canvas, white surfaces, ink actions, cash states. See DESIGN.md. */
 :root {
   color-scheme: light;
 
@@ -12,6 +13,8 @@
   --ink-3: #626b74;
   --rule: #e2e5e3;
   --rule-strong: #cfd4d1;
+  --accent: #14181c;
+  --accent-ink: #ffffff;
 
   --safe: #17795a;
   --safe-field: #e4f3ec;
@@ -21,6 +24,8 @@
   --blocked-field: #fbe7e6;
   --focus: #2f5bd0;
 
+  --shadow-card: 0 1px 2px rgb(20 24 28 / 0.04), 0 8px 24px -12px rgb(20 24 28 / 0.14);
+
   --t-tap: 120ms;
   --t-state: 220ms;
   --t-travel: 480ms;
@@ -29,7 +34,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     color-scheme: dark;
 
     --paper: #0b0e11;
@@ -39,6 +44,8 @@
     --ink-3: #828c96;
     --rule: #20262c;
     --rule-strong: #303840;
+    --accent: #eef1f3;
+    --accent-ink: #0b0e11;
 
     --safe: #5ed3a6;
     --safe-field: #0e2b22;
@@ -47,6 +54,8 @@
     --blocked: #f59a9e;
     --blocked-field: #381518;
     --focus: #8fb0ff;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -16px rgb(0 0 0 / 0.6);
   }
 }
 
@@ -66,23 +75,59 @@ body {
     'Helvetica Neue',
     Arial,
     sans-serif;
+  font-variant-numeric: tabular-nums;
   font-feature-settings:
     'ss01' 1,
     'cv11' 1;
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* Display type and money: tighter, so a large figure reads as one shape. */
+h1,
+h2,
+.money {
+  letter-spacing: -0.022em;
+}
+h1 {
+  letter-spacing: -0.032em;
+}
+
 .money {
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
 }
 
 .mono {
   font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
+/* Browser surfaces carry the design too. */
+::selection {
+  background: var(--risk-field);
+  color: var(--ink);
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+a {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+* {
+  scrollbar-color: var(--rule-strong) transparent;
+}
+input,
+textarea,
+select {
+  caret-color: var(--focus);
+}
+
+/* Motion follows the cash (DESIGN.md): it shows where cash goes, what a rule decided, or what the AI proposed. */
 @keyframes bar-grow {
   from {
     transform: scaleY(0);
@@ -104,11 +149,29 @@ body {
 @keyframes stamp-in {
   from {
     opacity: 0;
-    transform: translateY(6px) rotate(-1.5deg) scale(0.98);
+    transform: translateY(6px) rotate(-1.5deg) scale(1.08);
   }
   to {
     opacity: 1;
     transform: translateY(0) rotate(-1.5deg) scale(1);
+  }
+}
+
+/* A detail appears under the row it explains. */
+@keyframes detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* A tracker step fills when the money reaches it. */
+@keyframes step-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
   }
 }
 
@@ -126,8 +189,31 @@ body {
   animation: stamp-in var(--t-focal) var(--ease-out) both;
 }
 
+.detail-in {
+  animation: detail-in var(--t-state) var(--ease-out) both;
+}
+
+.step-fill {
+  transform-origin: left;
+  animation: step-fill var(--t-travel) var(--ease-out) both;
+}
+
+/* Reduced motion: keep colour, opacity and order; drop travel and scale. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .bar-grow {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-property: color, background-color, border-color, opacity, fill, stroke !important;
+  }
+
+  .bar-grow,
+  .step-fill {
     animation: none;
     transform: none;
   }
@@ -137,11 +223,11 @@ body {
   }
 
   .stamp {
-    animation: none;
+    animation: fade-in var(--t-state) linear both;
     transform: rotate(-1.5deg);
   }
 
-  html:focus-within {
-    scroll-behavior: auto;
+  .detail-in {
+    animation: fade-in var(--t-state) linear both;
   }
 }

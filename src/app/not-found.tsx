@@ -1,16 +1,24 @@
 import Link from 'next/link';
+import { Page, btn } from '@/components/ui/kit';
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-slate-800">
-      <h2 className="text-2xl font-bold mb-2">Page Not Found</h2>
-      <p className="text-sm text-slate-500 mb-4">Could not find requested resource</p>
-      <Link
-        href="/"
-        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
-      >
-        Return to Dashboard
-      </Link>
-    </div>
+    <Page narrow>
+      <div className="py-12">
+        <p className="mono text-xs text-ink-3">404</p>
+        <h1 className="mt-2 text-2xl font-semibold">This page isn&apos;t on the runway</h1>
+        <p className="mt-2 text-sm text-ink-2">
+          The address may be mistyped, or it points at something the demo reset removed.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Link href="/" className={btn.primary}>
+            Back to MerchOps
+          </Link>
+          <Link href="/ledger" className={btn.secondary}>
+            Open the ledger
+          </Link>
+        </div>
+      </div>
+    </Page>
   );
 }

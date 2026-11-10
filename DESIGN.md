@@ -47,20 +47,45 @@ Radius sets hierarchy: controls `md` (10px), sections `lg` (14px). One shadowed 
 The instrument is reused at hero size (the journey) and at detail size (the Runway tab). Same geometry,
 same colours, same floor.
 
+## Pages (one shell, every record has a page)
+
+The root layout (`src/app/layout.tsx`) holds the shell, so every page shares it: a sticky translucent
+header on the canvas (`bg-paper/80` + blur), the mark (a ring with the floor drawn through it), quiet
+links (Runway, Invoices, Bills, Plans, Ledger, Bench, Judge mode), the cleared cash, an in-place Reset
+confirm, and the one ink action, **Get a plan**. `AppStateProvider` (`src/components/shell/AppState.tsx`)
+holds one snapshot for every page, so the header, the runway and every list always show the same numbers.
+
+| Route | What it is |
+|---|---|
+| `/` | The five-act journey around the hero instrument, then "Waiting on you": each row links to the page that resolves it |
+| `/runway` | The instrument at hero size, the floor verdict, what lands on which day (each a link), day by day |
+| `/invoices`, `/invoices/[id]` | List; the invoice room: tracker, next step (AI reminder you approve, PayPal invoice, simulate), "if it's collected today" receipt and runway, history |
+| `/bills`, `/bills/[id]` | List; the bill room: the payout guardrail on the page (rail, floor check, confirm), "send it to the server anyway", the runway if paid today, history |
+| `/plans` | Each AI **Proposal** beside its separate **Rules decided** verdict; actions link to their records |
+| `/ledger` | The append-only log: filters, search, CSV, every row linked to its invoice or bill |
+| `/bench` | Twelve attacks, run live against the real guard |
+| `/demo` | Judge mode: the seven tour steps and the live PayPal sandbox run |
+
 ## Components
 
-- `Navbar`: a hairline header on the canvas, the mark (a ring with a floor tick), quiet links, the
-  cleared cash in tabular figures, and a secondary Reset. No gradients, no badge soup.
-- `Navigation`: four tabs that fit at 390 px (wrap, never scroll sideways).
-- `Journey` (`src/components/journey/Journey.tsx`): five acts — the cliff, the proposal, try to break
-  it, fix it, the receipt. One instrument stays visible; the panels change around it.
-- `ProposalCard`: the AI's plan, labelled **Proposal**. The deterministic verdict sits beside it in a
-  separate card, labelled **Rules decided**. They are never merged into one badge.
-- Operational views keep AG Grid on desktop and a stacked list under `sm`.
+- Kit (`src/components/ui/kit.tsx`): `btn` (primary, secondary, small, quiet), `StatusPill`, `Tracker`
+  (done = filled safe green with a check, current = ink ring, stopped by a rule = red, skipped = hairline,
+  never shown as done), `PageHeader`, `Figure`, `Section`, `Line` (receipt rows), `Ref` (mono ids),
+  `Notice`, `Trail` (date · event · who · amount), `ListRow`, `Missing`, `Skeleton`.
+- Record rooms follow one layout: header with status pill and amount, the tracker, then a main column
+  (`NextStep`, the one shadowed panel; a what-if `RunwayCard`; history) and a 22rem sticky side column
+  (the state-tinted money panel, details). Under `lg` the money panel moves directly under the next step.
+- What-if previews (`src/lib/client/whatIf.ts`) reuse the deterministic engine. `payoutCheck` mirrors the
+  server's floor check exactly (fee always counted, approved and in-flight payouts reserved), so no page
+  can say a payout passes when the server would refuse it.
+- `JudgeTour` (`src/components/shell/JudgeTour.tsx`): non-modal, bottom-right, walks the real pages,
+  folded by default on phones.
+- Language: every status, event and actor goes through `src/lib/client/states.ts`; no raw enum
+  (`OVERDUE`, `RULE_RESERVE_PRESERVED`, `AI_COPILOT`) reaches the screen.
 
 ## Layout and rules
 
-- Max width 6xl. The first screen (header + hero) fits 1280×800 and 390×844 without scrolling.
+- Max width 6xl; record rooms = main column + 22rem sticky side column. The first screen (header + hero) fits 1280×800 and 390×844 without scrolling.
 - Borders are 1px hairlines. One shadowed element per screen.
 - One primary button per screen; everything else is secondary.
 - **Motion follows the cash.** Motion is allowed only when it shows where the cash goes, what a rule

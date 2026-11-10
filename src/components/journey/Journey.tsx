@@ -17,9 +17,10 @@ import {
   proposePlan,
   simulatePayment,
 } from '@/lib/apiClient';
-import type { AuditLogEntry, RunwayForecast, StateSnapshot } from '@/types';
+import type { RunwayForecast, StateSnapshot } from '@/types';
 import type { CashPlan, CashPlanProposal } from '@/lib/plan/types';
 import { RunwayInstrument } from '@/components/runway/RunwayInstrument';
+import { Trail } from '@/components/ui/kit';
 
 interface JourneyProps {
   snapshot: StateSnapshot;
@@ -45,12 +46,6 @@ function formatDate(iso: string): string {
   const [year, month, day] = iso.split('-').map(Number);
   if (!year || !month || !day) return iso;
   return `${day} ${MONTHS[month - 1]} ${year}`;
-}
-
-function formatTimestamp(iso: string): string {
-  const date = iso.slice(0, 10);
-  const time = iso.slice(11, 16);
-  return `${formatDate(date)} · ${time}`;
 }
 
 function verdictTone(verdict: CashPlan['verdict']): string {
@@ -352,10 +347,10 @@ export function Journey({
                     <div key={plan.id} className="border-b border-rule px-4 py-3 last:border-b-0">
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="text-sm font-medium">{plan.title}</span>
-                        <span
-                          className={`mono text-[10px] font-semibold ${verdictTone(plan.verdict)}`}
-                        >
-                          {plan.verdict}
+                        <span className={`text-xs font-medium ${verdictTone(plan.verdict)}`}>
+                          {plan.verdict === 'ACCEPTED'
+                            ? 'Passes the rules'
+                            : 'Refused by the rules'}
                         </span>
                       </div>
                       <p className="mt-0.5 text-xs text-ink-2">{plan.subtitle}</p>
@@ -366,7 +361,7 @@ export function Journey({
                         ) : (
                           <span>No breach</span>
                         )}
-                        <span className="mono">{plan.origin === 'AI' ? 'Written by AI' : 'Fallback template'}</span>
+                        <span>{plan.origin === 'AI' ? 'Written by AI' : 'Fallback template'}</span>
                       </div>
                       {plan.assumptions.length > 0 && (
                         <p className="mt-1 text-[11px] text-ink-3">
@@ -395,9 +390,11 @@ export function Journey({
                 </div>
                 <p className="mt-1 text-[11px] leading-relaxed text-ink-2">
                   {proposals
-                    ? `${proposals.plans.filter((p) => p.verdict === 'ACCEPTED').length} of ${proposals.plans.length} plans pass. ${
-                        safest?.rulesFailed[0] ?? safest?.rulesPassed[safest.rulesPassed.length - 1] ?? ''
-                      }`
+                    ? `${proposals.plans.filter((p) => p.verdict === 'ACCEPTED').length} of ${proposals.plans.length} plans pass. ${(
+                        safest?.rulesFailed[0] ??
+                        safest?.rulesPassed[safest.rulesPassed.length - 1] ??
+                        ''
+                      ).replace(/^RULE_[A-Z_]+:\s*/, '')}`
                     : 'Waiting for the deterministic verdict.'}
                 </p>
               </div>
@@ -607,15 +604,9 @@ export function Journey({
                 Every decision is in the append-only audit log, including the one the floor refused.
               </p>
 
-              <ul className="mt-4 overflow-hidden rounded-lg border border-rule bg-panel">
-                {logs.length === 0 ? (
-                  <li className="px-4 py-4 text-xs text-ink-3">
-                    No events yet. Try the act again.
-                  </li>
-                ) : (
-                  logs.map((log) => <ReceiptRow key={log.id} log={log} />)
-                )}
-              </ul>
+              <div className="mt-4 rounded-lg border border-rule bg-panel px-4 py-1">
+                <Trail logs={logs} empty="No events yet. Try the act again." />
+              </div>
               <p className="mt-2 text-[11px] text-ink-3">
                 {logs.length} events · append-only · no edits
               </p>
@@ -626,7 +617,7 @@ export function Journey({
                   onClick={onOpenAudit}
                   className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors duration-200 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                 >
-                  Open full audit
+                  Open the ledger
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </button>
                 <button
@@ -692,63 +683,5 @@ function Readout({
       <p className="text-[10px] text-ink-3">{label}</p>
       <p className={`money mt-0.5 text-sm font-semibold ${toneClass}`}>{value}</p>
     </div>
-  );
-}
-
-const RECEIPT_LABELS: Record<string, string> = {
-  SYSTEM_INITIALIZED: 'Ledger initialized',
-  RUNWAY_MONITOR_ACTIVE: 'Runway monitor active',
-  PAYOUT_BLOCKED_RESERVE_BREACH: 'Payout refused by the floor',
-  PAYOUT_APPROVED: 'Payout approved by merchant',
-  PAYOUT_ACCEPTED_PAYPAL: 'Payout accepted by PayPal',
-  PAYOUT_IN_FLIGHT: 'Payout in flight',
-  PAYOUT_FAILED: 'Payout failed',
-  PAYOUT_OUTCOME_UNKNOWN: 'Payout outcome unknown',
-  INVOICE_PAID_PAYPAL: 'Invoice collected',
-  INVOICE_SYNCED_PAYPAL: 'Invoice synced',
-  REMINDER_DRAFTED_OPENROUTER: 'Reminder drafted by AI',
-  REMINDER_DRAFTED_TEMPLATE: 'Reminder drafted',
-};
-
-function receiptLabel(action: string): string {
-  return RECEIPT_LABELS[action] ?? action.split('_').join(' ').toLowerCase();
-}
-
-function receiptTone(action: string): { border: string; dot: string } {
-  if (action.includes('BLOCKED') || action.includes('FAILED')) {
-    return { border: 'border-l-blocked', dot: 'bg-blocked' };
-  }
-  if (action.includes('PAID') || action.includes('APPROVED') || action.includes('ACCEPTED')) {
-    return { border: 'border-l-safe', dot: 'bg-safe' };
-  }
-  return { border: 'border-l-rule-strong', dot: 'bg-ink-3' };
-}
-
-function ReceiptRow({ log }: { log: AuditLogEntry }) {
-  const tone = receiptTone(log.action);
-  return (
-    <li className={`border-b border-rule border-l-2 px-4 py-3 last:border-b-0 ${tone.border}`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="flex items-center gap-2 text-xs font-medium">
-          <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} aria-hidden="true" />
-          {receiptLabel(log.action)}
-        </span>
-        <span className="mono text-[10px] text-ink-3">{formatTimestamp(log.timestamp)}</span>
-      </div>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">{log.details}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="mono text-[10px] text-ink-3">{log.action}</span>
-        <span className="mono text-[10px] text-ink-3">{log.id}</span>
-        <span className="text-[10px] text-ink-3">
-          {log.actor.split('_').join(' ').toLowerCase()}
-        </span>
-        {typeof log.amountCents === 'number' && (
-          <span className="money text-[10px] font-medium text-ink-2">
-            {formatCentsToUSD(log.amountCents)}
-          </span>
-        )}
-        {log.isSimulated && <span className="mono text-[9px] text-ink-3">[SIMULATED]</span>}
-      </div>
-    </li>
   );
 }

@@ -13,7 +13,7 @@ Built for the PayPal AI Hackathon 2026.
 | | |
 |---|---|
 | **Live demo** | _Render URL: add once deployed_ |
-| **Demo video** | _YouTube link: add once recorded_ |
+| **Demo video** | _YouTube link: add once recorded_ · script: [DEMO_VIDEO_SCRIPT.md](DEMO_VIDEO_SCRIPT.md) |
 | **Repo** | https://github.com/Viruss07/merchops-ai (MIT) |
 
 ---
@@ -157,14 +157,14 @@ OpenRouter secrets, then register the webhook:
 
 ## Stack
 
-Next.js 15 (App Router) · React 19 · TypeScript (strict) · Zod · Tailwind · **AG Grid Community v36** for the
-Collections, Payouts and Audit grids · OpenRouter · PayPal REST (sandbox) · MCP TypeScript SDK · Node test
+Next.js 15 (App Router) · React 19 · TypeScript (strict) · Zod · Tailwind (one page per record: runway,
+invoices, bills, plans, ledger) · OpenRouter · PayPal REST (sandbox) · MCP TypeScript SDK · Node test
 runner · Render Blueprint.
 
 ## Docs
 
 [Architecture](docs/ARCHITECTURE.md) · [Decisions](docs/DECISIONS.md) · [Sandbox guide](docs/SANDBOX_GUIDE.md)
-· [Demo script](docs/DEMO_SCRIPT.md) · [Video script](docs/VIDEO_SCRIPT.md) · [Product](PRODUCT.md) · [Design](DESIGN.md)
+· [Demo script](docs/DEMO_SCRIPT.md) · [Video script](DEMO_VIDEO_SCRIPT.md) · [Product](PRODUCT.md) · [Design](DESIGN.md)
 
 ## License
 

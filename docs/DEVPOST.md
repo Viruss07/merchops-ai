@@ -22,7 +22,7 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 ## 2. How We Built It
 
 - **Application**: Next.js 15 App Router, TypeScript, React 19, Tailwind CSS.
-- **Institutional Tables**: AG Grid Community with custom theme.
+- **Interface**: one shared shell and a page per record (runway, each invoice, each bill, plans, ledger), each with one next step, a what-if runway preview and its own history.
 - **Persistence**: the demo runs on an in-memory store. A Postgres schema with append-only triggers on audit and ledger, a `webhook_events` dedupe table, and a `PgRepository` with advisory locks is written, but not yet wired into the routes.
 - **Concurrency & retries**: a bill state machine (a second authorization on an in-flight bill is refused) plus a deterministic `PayPal-Request-Id`, so a retried click can't pay twice.
 - **PayPal APIs**: 
@@ -36,7 +36,7 @@ MerchOps AI couples **predictive AI intelligence** with a **deterministic financ
 
 ## 3. Video Demo Script (< 3 Minutes)
 
-The scene-by-scene script, timings and recording checklist are in [VIDEO_SCRIPT.md](VIDEO_SCRIPT.md).
+The scene-by-scene script, timings and recording checklist are in [DEMO_VIDEO_SCRIPT.md](../DEMO_VIDEO_SCRIPT.md).
 
 - **YouTube**: add the link once uploaded
 

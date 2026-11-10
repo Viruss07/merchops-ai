@@ -24,7 +24,7 @@ MerchOps AI currently runs as a single Next.js App Router process. The browser t
 flowchart TD
     subgraph Client["Merchant Client (Browser)"]
         UI["Next.js App / React / Tailwind"]
-        Grid["AG Grid (Invoices, Bills, Audit)"]
+        Pages["Pages per record\n(runway, invoices, bills, plans, ledger)"]
     end
 
     subgraph App["Next.js App Router (single process)"]
@@ -53,9 +53,9 @@ flowchart TD
     end
 
     UI --> StateAPI
-    Grid --> StateAPI
+    Pages --> StateAPI
     UI --> Guards
-    Grid --> Guards
+    Pages --> Guards
 
     Guards --> RunwayEng
     Guards --> Policy
@@ -109,7 +109,7 @@ The following is a production target. Nodes labeled **PLANNED** do not exist in 
 flowchart TD
     subgraph Client["Merchant Client (Browser)"]
         UI["Next.js App / React / Tailwind"]
-        Grid["AG Grid (Invoices & Bills)"]
+        Pages["Pages per record"]
     end
 
     subgraph App["Next.js App Router Backend"]
@@ -140,7 +140,7 @@ flowchart TD
     end
 
     UI --> Auth
-    Grid --> Auth
+    Pages --> Auth
     Auth --> RunwayEng
     Auth --> CollEng
     Auth --> PayoutEng
