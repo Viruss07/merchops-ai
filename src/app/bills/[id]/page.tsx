@@ -1,8 +1,18 @@
 'use client';
 
-import React, { use, useEffect, useState } from 'react';
+import React, { use, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, Clock, Loader2, Lock, RefreshCw, Send, ShieldAlert } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+} from 'lucide-react';
 import { WithState } from '@/components/shell/WithState';
 import { useAppState } from '@/components/shell/AppState';
 import { RunwayCard } from '@/components/runway/RunwayCard';
@@ -25,13 +35,18 @@ import {
   ApiError,
   authorizePayout,
   getErrorMessage,
-  syncPayout,
   type PayoutExecutionMode,
 } from '@/lib/apiClient';
+import { usePayoutSettlement } from '@/lib/client/payoutPolling';
 import { calculatePayoutFeeCents, formatCentsToUSD } from '@/lib/money';
 import { derivePayoutRequestId } from '@/lib/idempotency';
 import { BILL_STEPS, billStatus, billStep, eventsFor, formatDate } from '@/lib/client/states';
 import { ifPaidToday, payoutCheck } from '@/lib/client/whatIf';
+import { PayPalBalanceCard } from '@/components/bills/PayPalBalanceCard';
+import {
+  evaluateBillPayPalBalance,
+  PAYPAL_SANDBOX_ACCOUNTS_URL,
+} from '@/lib/paypalBalance';
 import type { Bill, StateSnapshot } from '@/types';
 
 function policyFor(bill: Bill, snapshot: StateSnapshot) {
@@ -55,7 +70,8 @@ function NextStep({
 }) {
   const { setSnapshot } = useAppState();
   const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState<null | 'pay' | 'try' | 'sync'>(null);
+  const [busy, setBusy] = useState<null | 'pay' | 'try'>(null);
+  const authSubmittingRef = useRef(false);
   const [refusal, setRefusal] = useState<{
     code: string;
     message: string;
@@ -65,11 +81,28 @@ function NextStep({
   const [done, setDone] = useState<string | null>(null);
   const sandbox = snapshot.capabilities.paypalSandboxEnabled;
   const policy = policyFor(bill, snapshot);
+  const walletCheck = evaluateBillPayPalBalance({
+    paypalBalance: snapshot.paypalBalance,
+    billAmountCents: bill.amountCents,
+    feeCents: snapshot.demoConfig.paypalPayoutFeeCents,
+  });
   const overdue = snapshot.invoices.find((i) => i.status === 'OVERDUE');
+  const settlement = usePayoutSettlement({
+    billId: bill.id,
+    active: bill.status === 'IN_FLIGHT' && sandbox && bill.paypalBatchStatus !== 'SIMULATED',
+    initialBatchId: bill.paypalBatchId ?? null,
+    onSnapshot: setSnapshot,
+  });
 
-  useEffect(() => setConfirmed(false), [rail]);
+  useEffect(() => {
+    setConfirmed(false);
+    setRefusal(null);
+    setError(null);
+  }, [rail, bill.id]);
 
   const authorize = async (kind: 'pay' | 'try') => {
+    if (authSubmittingRef.current || busy !== null) return;
+    authSubmittingRef.current = true;
     setBusy(kind);
     setError(null);
     setRefusal(null);
@@ -80,8 +113,11 @@ function NextStep({
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.snapshot) setSnapshot(caught.snapshot);
-        if (caught.code === 'RESERVE_BREACH_BLOCKED') {
-          const d = caught.details?.deficitCents;
+        if (
+          caught.code === 'RESERVE_BREACH_BLOCKED' ||
+          caught.code === 'PAYPAL_INSUFFICIENT_BALANCE'
+        ) {
+          const d = caught.details?.deficitCents ?? caught.details?.shortfallCents;
           setRefusal({
             code: `${caught.status} · ${caught.code}`,
             message: caught.message,
@@ -92,6 +128,7 @@ function NextStep({
       }
       setError(getErrorMessage(caught));
     } finally {
+      authSubmittingRef.current = false;
       setBusy(null);
     }
   };
@@ -102,13 +139,20 @@ function NextStep({
         aria-labelledby="next-h"
         className={`rounded-lg border p-4 sm:p-5 ${TONE_SURFACE.safe}`}
       >
-        <h2 id="next-h" className="flex items-center gap-2 text-base font-semibold text-safe">
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-          Paid
-        </h2>
-        <p className="mt-1 text-sm text-ink-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="next-h" className="flex items-center gap-2 text-base font-semibold text-safe">
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            Paid
+          </h2>
+          {bill.paypalBatchId && (
+            <span className="mono rounded border border-safe/35 bg-paper/80 px-2 py-0.5 text-xs text-ink">
+              Batch {bill.paypalBatchId}
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 text-sm text-ink-2">
           {done ??
-            `${formatCentsToUSD(bill.amountCents)} went to ${bill.vendorName}. The ledger was debited only once settlement was confirmed.`}
+            `${formatCentsToUSD(bill.amountCents)} settled to ${bill.vendorName}${bill.actualFeeCents != null ? ` (PayPal fee ${formatCentsToUSD(bill.actualFeeCents)})` : ''}. The internal ledger was debited once upon settlement confirmation.`}
         </p>
         <Link href="/ledger" className={`${btn.secondary} mt-4`}>
           See it in the audit log
@@ -118,64 +162,125 @@ function NextStep({
   }
 
   if (bill.status === 'IN_FLIGHT') {
+    const retainedBatchId = bill.paypalBatchId ?? settlement.batchId;
+    const isActivelyPolling = settlement.phase === 'polling' || settlement.isSyncing;
+
     return (
       <section
         aria-labelledby="next-h"
         className={`rounded-lg border p-4 shadow-card sm:p-5 ${TONE_SURFACE.risk}`}
       >
-        <h2 id="next-h" className="flex items-center gap-2 text-base font-semibold">
-          <Clock className="h-4 w-4 text-risk" aria-hidden="true" />
-          Waiting for PayPal to settle
-        </h2>
-        <p className="mt-1 text-sm leading-relaxed text-ink-2">
-          PayPal accepted the batch. {formatCentsToUSD(bill.amountCents)} stays reserved, not
-          debited, until PayPal confirms it. A second payout for this bill is locked until then.
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="next-h" className="flex items-center gap-2 text-base font-semibold text-ink">
+            {isActivelyPolling ? (
+              <Loader2 className="h-4 w-4 animate-spin text-risk motion-reduce:animate-none" aria-hidden="true" />
+            ) : (
+              <Clock className="h-4 w-4 text-risk" aria-hidden="true" />
+            )}
+            Payout processing
+          </h2>
+          {retainedBatchId && (
+            <span className="mono rounded border border-rule-strong bg-paper/80 px-2 py-0.5 text-xs text-ink">
+              Batch {retainedBatchId}
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 text-sm leading-relaxed text-ink-2">
+          {settlement.phase === 'polling'
+            ? `PayPal accepted the batch and reports ${settlement.paypalStatus ?? 'PENDING'}. Settlement is being checked automatically — ${formatCentsToUSD(bill.amountCents)} stays reserved (never debited twice) until PayPal reports SUCCESS.`
+            : settlement.phase === 'timed_out'
+              ? `PayPal is still processing batch ${retainedBatchId ?? 'pending'}. Automatic polling paused cleanly; use Refresh PayPal status to check again.`
+              : `PayPal accepted batch ${retainedBatchId ?? 'pending'}. ${formatCentsToUSD(bill.amountCents)} stays reserved, not debited, until PayPal confirms SUCCESS.`}
         </p>
-        <button
-          type="button"
-          disabled={busy !== null}
-          onClick={async () => {
-            setBusy('sync');
-            setError(null);
-            try {
-              const res = await syncPayout(bill.id);
-              setSnapshot(res.snapshot);
-              setDone(res.message);
-            } catch (caught) {
-              if (caught instanceof ApiError && caught.snapshot) setSnapshot(caught.snapshot);
-              setError(getErrorMessage(caught));
-            } finally {
-              setBusy(null);
-            }
-          }}
-          className={`${btn.primary} mt-4`}
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${busy === 'sync' ? 'animate-spin motion-reduce:animate-none' : ''}`}
-            aria-hidden="true"
-          />
-          {busy === 'sync' ? 'Checking PayPal…' : 'Check settlement with PayPal'}
-        </button>
-        {done && <p className="mt-3 text-sm text-ink-2">{done}</p>}
-        {error && (
-          <p role="alert" className="mt-3 text-sm text-blocked">
-            {error}
+        {settlement.networkWarning && (
+          <p
+            role="status"
+            className="mt-3 rounded-md border border-risk/40 bg-paper/85 px-3 py-2 text-xs text-ink-2"
+          >
+            {settlement.networkWarning}
           </p>
         )}
+        {settlement.terminalError && (
+          <p role="alert" className="mt-3 text-sm text-blocked">
+            {settlement.terminalError}
+          </p>
+        )}
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            disabled={settlement.isSyncing || busy !== null}
+            onClick={() => void settlement.refreshNow()}
+            className={btn.primary}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${settlement.isSyncing ? 'animate-spin motion-reduce:animate-none' : ''}`}
+              aria-hidden="true"
+            />
+            {settlement.isSyncing ? 'Refreshing PayPal status…' : 'Refresh PayPal status'}
+          </button>
+          <span className="text-xs text-ink-3">
+            Checks existing batch only — no duplicate payout is submitted.
+          </span>
+        </div>
+      </section>
+    );
+  }
+
+  if (bill.status === 'FAILED') {
+    const billEvents = eventsFor(snapshot.auditLogs, bill.billNumber);
+    const failedEvent = billEvents.find((log) => log.action === 'PAYOUT_FAILED');
+    const isInsufficientFundsFailure = failedEvent
+      ? failedEvent.details.includes('INSUFFICIENT_FUNDS')
+      : Boolean(snapshot.paypalBalance.lastInsufficientFundsAt);
+
+    return (
+      <section
+        aria-labelledby="next-h"
+        className={`rounded-lg border p-4 sm:p-5 ${TONE_SURFACE.blocked}`}
+      >
+        <h2 id="next-h" className="flex items-center gap-2 text-base font-semibold text-blocked">
+          <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+          Payout failed · Nothing moved
+        </h2>
+        <p className="mt-1 text-sm leading-relaxed text-ink-2">
+          {failedEvent?.details ??
+            snapshot.paypalBalance.lastInsufficientFundsMessage ??
+            'The last PayPal payout attempt failed. Failed status is preserved, internal ledger was not debited, and automatic retry is disabled.'}
+        </p>
+        <div className="mt-3 rounded-md border border-blocked/35 bg-paper/80 px-3 py-2.5 text-xs text-ink-2">
+          <p className="font-medium text-ink">
+            {isInsufficientFundsFailure
+              ? 'PayPal Sandbox returned INSUFFICIENT_FUNDS'
+              : 'Payout locked in FAILED state'}
+          </p>
+          <p className="mt-0.5">
+            Internal cleared cash ({formatCentsToUSD(snapshot.account.clearedBalanceCents)}) was
+            preserved without debit, and duplicate submission is blocked until you replenish funds
+            and reset/issue a fresh batch.
+          </p>
+          <a
+            href={PAYPAL_SANDBOX_ACCOUNTS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1 font-semibold text-blocked underline"
+          >
+            Open PayPal Developer Sandbox Accounts Dashboard
+            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          </a>
+        </div>
       </section>
     );
   }
 
   const blocked = policy.wouldBreach;
+  const paypalWalletBlocked = rail === 'PAYPAL_SANDBOX' && walletCheck.status === 'INSUFFICIENT';
   return (
     <section
       aria-labelledby="next-h"
       className="rounded-lg border border-rule bg-panel p-4 shadow-card sm:p-5"
     >
       <h2 id="next-h" className="text-base font-semibold">
-        {bill.status === 'FAILED'
-          ? 'The last payout failed. Nothing moved.'
-          : `Pay ${bill.vendorName}`}
+        Pay {bill.vendorName}
       </h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-2">
         Due {formatDate(bill.dueDate)}, in {bill.daysUntilDue} days. The reserve check runs here and
@@ -196,7 +301,7 @@ function NextStep({
               [
                 'PAYPAL_SANDBOX',
                 'PayPal Payouts (sandbox)',
-                `POST /v1/payments/payouts. Fee ${formatCentsToUSD(calculatePayoutFeeCents(bill.amountCents))}, in the check.`,
+                `POST /v1/payments/payouts. PayPal API fee ${formatCentsToUSD(snapshot.demoConfig.paypalPayoutFeeCents)}; reserve check buffers ${formatCentsToUSD(calculatePayoutFeeCents(bill.amountCents))}.`,
                 sandbox,
               ],
             ] as const
@@ -266,11 +371,79 @@ function NextStep({
         </div>
       ) : (
         <>
+          {rail === 'PAYPAL_SANDBOX' && walletCheck.status === 'INSUFFICIENT' && (
+            <div
+              role="alert"
+              className="mt-4 rounded-md border-2 border-blocked bg-blocked-field p-4"
+            >
+              <p className="flex items-center gap-2 text-sm font-semibold text-blocked">
+                <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Blocked before calling PayPal · Insufficient Sandbox balance
+              </p>
+              <p className="money mt-1 text-2xl font-semibold text-blocked">
+                {formatCentsToUSD(walletCheck.shortfallCents)} short
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-ink-2">
+                Needs{' '}
+                <strong className="money text-ink">
+                  {formatCentsToUSD(walletCheck.requiredCents)}
+                </strong>{' '}
+                ({formatCentsToUSD(bill.amountCents)} payout +{' '}
+                {formatCentsToUSD(walletCheck.feeCents)} PayPal fee), while Sandbox wallet holds{' '}
+                <strong className="money text-ink">
+                  {formatCentsToUSD(walletCheck.availableCents ?? 0)}
+                </strong>
+                . Replenish Sandbox funds before submitting.
+              </p>
+              <a
+                href={PAYPAL_SANDBOX_ACCOUNTS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blocked underline"
+              >
+                Replenish Sandbox funds at PayPal Developer Dashboard
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            </div>
+          )}
+
+          {rail === 'PAYPAL_SANDBOX' && walletCheck.status === 'UNAVAILABLE' && (
+            <div
+              role="status"
+              className="mt-4 flex items-start gap-2.5 rounded-md border border-risk/45 bg-risk-field/60 p-3 text-xs text-ink-2"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-risk" aria-hidden="true" />
+              <div>
+                <p className="font-semibold text-ink">
+                  PayPal balance unavailable · Internal cash does not confirm wallet funds
+                </p>
+                <p className="mt-0.5 leading-relaxed">
+                  Internal cleared cash (
+                  <span className="money">
+                    {formatCentsToUSD(snapshot.account.clearedBalanceCents)}
+                  </span>
+                  ) cannot guarantee your Sandbox Business wallet covers{' '}
+                  <span className="money">{formatCentsToUSD(walletCheck.requiredCents)}</span>. Check
+                  your wallet on{' '}
+                  <a
+                    href={PAYPAL_SANDBOX_ACCOUNTS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-focus underline"
+                  >
+                    PayPal Developer Sandbox Accounts
+                  </a>{' '}
+                  before dispatching.
+                </p>
+              </div>
+            </div>
+          )}
+
           <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-md border border-rule bg-paper p-3 text-sm">
             <input
               type="checkbox"
               checked={confirmed}
-              disabled={busy !== null}
+              disabled={busy !== null || paypalWalletBlocked}
               onChange={(e) => setConfirmed(e.target.checked)}
               className="mt-0.5 h-4 w-4 accent-[var(--ink)]"
             />
@@ -282,7 +455,7 @@ function NextStep({
           </label>
           <button
             type="button"
-            disabled={!confirmed || busy !== null}
+            disabled={!confirmed || busy !== null || paypalWalletBlocked}
             onClick={() => void authorize('pay')}
             className={`${btn.primary} mt-3 w-full sm:w-auto`}
           >
@@ -296,16 +469,18 @@ function NextStep({
             )}
             {busy === 'pay'
               ? 'Authorizing…'
-              : `Approve payout · ${formatCentsToUSD(bill.amountCents)}`}
+              : paypalWalletBlocked
+                ? 'Blocked · Top up PayPal Sandbox'
+                : `Approve payout · ${formatCentsToUSD(bill.amountCents)}`}
           </button>
         </>
       )}
 
       {refusal && (
-        <div className="stamp mt-4 inline-block rounded-md border-2 border-blocked bg-panel px-3 py-2 text-blocked">
+        <div className="stamp mt-4 inline-block rounded-lg border-2 border-blocked bg-panel px-3 py-2 text-blocked">
           <p className="text-sm font-semibold">The server refused it</p>
           <p className="mt-0.5 text-xs text-ink-2">{refusal.message}</p>
-          <p className="mono mt-1 text-[11px] text-ink-3">{refusal.code}</p>
+          <p className="mono mt-1 text-xs text-ink-2">{refusal.code}</p>
         </div>
       )}
       {error && (
@@ -369,8 +544,13 @@ function MoneyPanel({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot })
             />
           )}
           <Line
-            label="PayPal payout fee"
-            hint="2%, at most $1.00, counted on both rails"
+            label="PayPal Payouts API fee"
+            hint="Actual flat USD fee per Payouts v1 item (separate from reserve buffer)"
+            value={`− ${formatCentsToUSD(snapshot.demoConfig.paypalPayoutFeeCents)}`}
+          />
+          <Line
+            label="Reserve fee buffer cap"
+            hint="2% conservative cap (max $1.00) reserved by deterministic rules"
             value={`− ${formatCentsToUSD(policy.fee)}`}
           />
           <Line
@@ -393,6 +573,7 @@ function MoneyPanel({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot })
         </summary>
         <dl className="mt-2">
           <Ref label="PayPal-Request-Id" value={derivePayoutRequestId(bill.id, snapshot.demoConfig.payoutEpoch)} />
+          {bill.paypalBatchId && <Ref label="PayPal batch" value={bill.paypalBatchId} />}
           <Ref label="Verified batch" value={snapshot.capabilities.verifiedBatchId} />
         </dl>
         <p className="mt-1 text-xs text-ink-3">
@@ -444,6 +625,10 @@ function BillRoom({ bill, snapshot }: { bill: Bill; snapshot: StateSnapshot }) {
           current={open && !policy.wouldBreach ? 2 : billStep(bill)}
           stoppedAt={stoppedAt}
         />
+      </div>
+
+      <div className="mb-5">
+        <PayPalBalanceCard snapshot={snapshot} bill={bill} />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">

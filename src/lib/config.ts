@@ -33,10 +33,22 @@ function getDefaultForecastDays(): number {
   return 30;
 }
 
+function getPayPalPayoutFeeCents(): number {
+  const envValue = process.env.PAYPAL_PAYOUT_FEE_CENTS;
+  if (envValue) {
+    const parsed = Number(envValue);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return 25;
+}
+
 export const DEMO_AS_OF = getDemoAsOf();
 export const DEFAULT_MIN_RESERVE_CENTS = getDefaultMinReserveCents();
 export const DEFAULT_FORECAST_DAYS = getDefaultForecastDays();
 export const PAYPAL_SANDBOX_ENABLED = process.env.PAYPAL_PAYOUTS_ENABLED === 'true';
+export const PAYPAL_PAYOUT_FEE_CENTS = getPayPalPayoutFeeCents();
 
 /**
  * Optional sandbox Personal account that receives every live sandbox payout. The seeded vendors

@@ -16,8 +16,10 @@ import {
   DEFAULT_FORECAST_DAYS,
   DEFAULT_MIN_RESERVE_CENTS,
   DEMO_AS_OF,
+  PAYPAL_PAYOUT_FEE_CENTS,
   PAYPAL_SANDBOX_ENABLED,
 } from '@/lib/config';
+import { createUnavailablePayPalBalance } from '@/lib/paypalBalance';
 import { calculatePayoutFeeCents } from '@/lib/money';
 
 const { Pool } = pg;
@@ -177,6 +179,7 @@ export class PgRepository implements IRepository {
       invoices,
       bills,
       auditLogs,
+      paypalBalance: createUnavailablePayPalBalance(),
       capabilities: {
         paypalSandboxEnabled: PAYPAL_SANDBOX_ENABLED,
         payoutMode: PAYPAL_SANDBOX_ENABLED ? 'SANDBOX_UNVERIFIED' : 'SIMULATION',
@@ -186,6 +189,7 @@ export class PgRepository implements IRepository {
         asOfDate: DEMO_AS_OF,
         forecastDays: DEFAULT_FORECAST_DAYS,
         payoutEpoch: 'v1',
+        paypalPayoutFeeCents: PAYPAL_PAYOUT_FEE_CENTS,
       },
     };
   }

@@ -18,6 +18,34 @@
  * 6. Sets a non-zero process.exitCode on any failure.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
+
+function loadEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, 'utf8');
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+    else if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+    if (!process.env[key]) {
+      process.env[key] = val;
+    }
+  }
+}
+
+loadEnvFile(path.join(repoRoot, '.env.local'));
+loadEnvFile(path.join(repoRoot, '.env'));
+
 const REQUIRED_SANDBOX_URL = 'https://api-m.sandbox.paypal.com';
 const TARGET_PAYOUTS_SCOPE = 'https://uri.paypal.com/payments/payouts';
 

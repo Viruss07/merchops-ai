@@ -3,6 +3,7 @@
 import React from 'react';
 import { formatCentsToUSD } from '@/lib/money';
 import { formatDate } from '@/lib/client/states';
+import { findLowestBalancePoint } from '@/lib/runway';
 import type { RunwayForecast } from '@/types';
 import { RunwayInstrument } from '@/components/runway/RunwayInstrument';
 
@@ -28,6 +29,8 @@ export function RunwayCard({
   shadow?: boolean;
   caption?: React.ReactNode;
 }) {
+  const lowestPoint = findLowestBalancePoint(forecast);
+  const lowestLabel = lowestPoint.isOpening ? 'Lowest · Today' : `Lowest · Day ${lowestPoint.dayNumber}`;
   const deficit = forecast.firstBreachDeficitCents ?? forecast.breachDeficitCents ?? 0;
   const autoStamp =
     stamp === undefined
@@ -39,11 +42,16 @@ export function RunwayCard({
   return (
     <figure className="m-0">
       <div
-        className={`rounded-lg border border-rule bg-panel p-4 sm:p-5 ${shadow ? 'shadow-card' : ''}`}
+        className={`rounded-xl border border-rule bg-panel p-4 sm:p-5 ${shadow ? 'shadow-card' : ''}`}
       >
-        <div className="flex items-baseline justify-between gap-3">
-          <figcaption className="text-sm font-medium text-ink">{title}</figcaption>
-          <span className="mono text-[11px] text-ink-3">as of {formatDate(asOf)}</span>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <figcaption className="text-sm font-semibold text-ink">{title}</figcaption>
+          <span
+            className="mono text-xs text-ink-2"
+            title="Deterministic forecast baseline date. Live PayPal transactions log real UTC timestamps."
+          >
+            Scenario baseline: {formatDate(asOf, { year: true })}
+          </span>
         </div>
         <RunwayInstrument
           className="mt-4"
@@ -56,23 +64,17 @@ export function RunwayCard({
           size={size}
           stamp={autoStamp}
         />
-        <dl className="mt-4 grid grid-cols-3 divide-x divide-rule border-t border-rule pt-3">
-          <Readout label="Cleared" value={formatCentsToUSD(clearedCents)} />
-          <Readout label="Reserve" value={formatCentsToUSD(floorCents)} />
+        <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-rule pt-3 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-rule">
+          <Readout label="Cleared cash" value={formatCentsToUSD(clearedCents)} />
+          <Readout label="Safety reserve" value={formatCentsToUSD(floorCents)} />
           <Readout
-            label={
-              forecast.firstBreachDay === 0
-                ? 'Lowest · today'
-                : forecast.firstBreachDay !== undefined
-                  ? `Lowest · Day ${forecast.firstBreachDay}`
-                  : 'Lowest'
-            }
+            label={lowestLabel}
             value={formatCentsToUSD(forecast.minBalanceCents)}
             tone={forecast.hasReserveBreach ? 'blocked' : 'safe'}
           />
         </dl>
       </div>
-      {caption && <p className="mt-2 text-xs text-ink-3">{caption}</p>}
+      {caption && <p className="mt-2 text-xs text-ink-2">{caption}</p>}
     </figure>
   );
 }
@@ -87,8 +89,8 @@ function Readout({
   tone?: 'safe' | 'blocked';
 }) {
   return (
-    <div className="px-3 first:pl-0 last:pr-0">
-      <dt className="text-[11px] text-ink-3">{label}</dt>
+    <div className="flex items-baseline justify-between gap-2 sm:block sm:px-3 sm:first:pl-0 sm:last:pr-0">
+      <dt className="text-xs text-ink-2">{label}</dt>
       <dd
         className={`money mt-0.5 text-sm font-semibold ${tone === 'blocked' ? 'text-blocked' : tone === 'safe' ? 'text-safe' : 'text-ink'}`}
       >

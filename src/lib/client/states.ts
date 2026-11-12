@@ -22,6 +22,15 @@ export function formatStamp(iso: string): string {
   return `${formatDate(iso, { year: false })} · ${iso.slice(11, 16)}`;
 }
 
+/** Full readable UTC timestamp parts for audit inspection. */
+export function formatStampParts(iso: string): { date: string; time: string } {
+  const time = iso.length >= 19 ? `${iso.slice(11, 19)} UTC` : `${iso.slice(11, 16)} UTC`;
+  return {
+    date: formatDate(iso, { year: true }),
+    time,
+  };
+}
+
 /** Day number on the runway (Day 1 = the day after the as-of date, as in lib/runway.ts). */
 export function dayOnRunway(asOf: string, iso: string): number {
   const utc = (value: string) => {
@@ -103,6 +112,7 @@ const EVENTS: Record<string, string> = {
   SYSTEM_INITIALIZED: 'Ledger opened',
   RUNWAY_MONITOR_ACTIVE: 'Runway monitor saw the reserve crossed',
   PAYOUT_BLOCKED_RESERVE_BREACH: 'Payout refused by the reserve',
+  PAYOUT_BLOCKED_PAYPAL_BALANCE: 'Payout blocked by low PayPal balance',
   PAYOUT_APPROVED: 'You approved a payout',
   PAYOUT_ACCEPTED_PAYPAL: 'PayPal accepted the payout batch',
   PAYOUT_IN_FLIGHT: 'Payout in flight',

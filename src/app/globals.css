@@ -6,25 +6,25 @@
 :root {
   color-scheme: light;
 
-  --paper: #f3f4f2;
+  --paper: #f8fafc;
   --panel: #ffffff;
-  --ink: #14181c;
-  --ink-2: #4c545c;
-  --ink-3: #626b74;
-  --rule: #e2e5e3;
-  --rule-strong: #cfd4d1;
-  --accent: #14181c;
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #64748b;
+  --rule: #e2e8f0;
+  --rule-strong: #cbd5e1;
+  --accent: #0f172a;
   --accent-ink: #ffffff;
 
-  --safe: #17795a;
-  --safe-field: #e4f3ec;
-  --risk: #9a590a;
-  --risk-field: #fbf0df;
-  --blocked: #b4232a;
-  --blocked-field: #fbe7e6;
-  --focus: #2f5bd0;
+  --safe: #059669;
+  --safe-field: #ecfdf5;
+  --risk: #d97706;
+  --risk-field: #fffbeb;
+  --blocked: #dc2626;
+  --blocked-field: #fef2f2;
+  --focus: #2563eb;
 
-  --shadow-card: 0 1px 2px rgb(20 24 28 / 0.04), 0 8px 24px -12px rgb(20 24 28 / 0.14);
+  --shadow-card: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 10px 25px -5px rgb(15 23 42 / 0.08);
 
   --t-tap: 120ms;
   --t-state: 220ms;
@@ -37,25 +37,25 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --paper: #0b0e11;
-    --panel: #12161b;
-    --ink: #eef1f3;
-    --ink-2: #a9b2ba;
-    --ink-3: #828c96;
-    --rule: #20262c;
-    --rule-strong: #303840;
-    --accent: #eef1f3;
-    --accent-ink: #0b0e11;
+    --paper: #090d16;
+    --panel: #0f172a;
+    --ink: #f8fafc;
+    --ink-2: #cbd5e1;
+    --ink-3: #8b9bb0;
+    --rule: #1e293b;
+    --rule-strong: #334155;
+    --accent: #f8fafc;
+    --accent-ink: #0f172a;
 
-    --safe: #5ed3a6;
-    --safe-field: #0e2b22;
-    --risk: #f0b45b;
-    --risk-field: #32230c;
-    --blocked: #f59a9e;
-    --blocked-field: #381518;
-    --focus: #8fb0ff;
+    --safe: #34d399;
+    --safe-field: #064e3b;
+    --risk: #fbbf24;
+    --risk-field: #451a03;
+    --blocked: #f87171;
+    --blocked-field: #450a0a;
+    --focus: #60a5fa;
 
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 12px 30px -8px rgb(0 0 0 / 0.7);
   }
 }
 
@@ -90,6 +90,7 @@ h2,
 .money {
   letter-spacing: -0.022em;
 }
+
 h1 {
   letter-spacing: -0.032em;
 }
@@ -109,18 +110,22 @@ h1 {
   background: var(--risk-field);
   color: var(--ink);
 }
+
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 4px;
 }
+
 a {
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
 }
+
 * {
   scrollbar-color: var(--rule-strong) transparent;
 }
+
 input,
 textarea,
 select {
@@ -132,6 +137,7 @@ select {
   from {
     transform: scaleY(0);
   }
+
   to {
     transform: scaleY(1);
   }
@@ -141,6 +147,7 @@ select {
   from {
     clip-path: inset(0 100% 0 0);
   }
+
   to {
     clip-path: inset(0 0 0 0);
   }
@@ -151,6 +158,7 @@ select {
     opacity: 0;
     transform: translateY(6px) rotate(-1.5deg) scale(1.08);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) rotate(-1.5deg) scale(1);
@@ -170,6 +178,7 @@ select {
   from {
     transform: scaleX(0);
   }
+
   to {
     transform: scaleX(1);
   }
@@ -204,7 +213,9 @@ select {
     opacity: 0;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {

@@ -1,8 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, Check, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, CheckCircle2, Info, X } from 'lucide-react';
 import { formatCentsToUSD } from '@/lib/money';
-import { actorLabel, eventLabel, eventTone, formatStamp, type Tone } from '@/lib/client/states';
+import { actorLabel, eventLabel, eventTone, formatStampParts, type Tone } from '@/lib/client/states';
 import type { AuditLogEntry } from '@/types';
 
 /* ---------- Buttons: one primary per screen, everything else secondary or quiet. ---------- */
@@ -11,9 +11,9 @@ const focusRing =
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-paper';
 
 export const btn = {
-  primary: `inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`,
-  secondary: `inline-flex items-center justify-center gap-2 rounded-md border border-rule-strong bg-panel px-4 py-2.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`,
-  small: `inline-flex items-center justify-center gap-1.5 rounded-md border border-rule-strong bg-panel px-3 py-1.5 text-xs font-medium text-ink transition-colors duration-150 hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`,
+  primary: `inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink shadow-sm transition-all duration-150 hover:opacity-90 hover:shadow active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`,
+  secondary: `inline-flex items-center justify-center gap-2 rounded-lg border border-rule-strong bg-panel px-4 py-2.5 text-sm font-medium text-ink shadow-xs transition-all duration-150 hover:bg-paper hover:border-ink-3 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`,
+  small: `inline-flex items-center justify-center gap-1.5 rounded-md border border-rule-strong bg-panel px-3 py-1.5 text-xs font-medium text-ink shadow-xs transition-all duration-150 hover:bg-paper hover:border-ink-3 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`,
   quiet: `inline-flex items-center gap-1.5 rounded-sm text-sm text-ink-2 underline decoration-rule-strong underline-offset-4 transition-colors duration-150 hover:text-ink hover:decoration-ink ${focusRing}`,
 };
 
@@ -43,10 +43,10 @@ export const TONE_SURFACE: Record<Tone, string> = {
 
 export function StatusPill({ label, tone }: { label: string; tone: Tone }) {
   const surface: Record<Tone, string> = {
-    safe: 'bg-safe-field text-safe',
-    risk: 'bg-risk-field text-risk',
-    blocked: 'bg-blocked-field text-blocked',
-    neutral: 'bg-paper text-ink-2 ring-1 ring-inset ring-rule',
+    safe: 'bg-safe-field text-safe ring-1 ring-inset ring-safe/30',
+    risk: 'bg-risk-field text-risk ring-1 ring-inset ring-risk/30',
+    blocked: 'bg-blocked-field text-blocked ring-1 ring-inset ring-blocked/30',
+    neutral: 'bg-paper text-ink-2 ring-1 ring-inset ring-rule-strong',
   };
   return (
     <span
@@ -109,28 +109,26 @@ export function Tracker({
             </div>
             <div className="mt-2 flex items-center gap-1.5">
               <span
-                className={`grid h-4 w-4 shrink-0 place-items-center rounded-full ${
-                  state === 'done'
+                className={`grid h-4 w-4 shrink-0 place-items-center rounded-full ${state === 'done'
                     ? 'bg-safe text-paper'
                     : state === 'stopped'
                       ? 'bg-blocked text-paper'
                       : state === 'current'
                         ? 'ring-[1.5px] ring-inset ring-ink'
                         : 'ring-1 ring-inset ring-rule-strong'
-                }`}
+                  }`}
                 aria-hidden="true"
               >
                 {state === 'done' && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
                 {state === 'stopped' && <X className="h-2.5 w-2.5" strokeWidth={3} />}
               </span>
               <span
-                className={`relative truncate text-xs ${
-                  state === 'upcoming' || state === 'skipped'
+                className={`relative truncate text-xs ${state === 'upcoming' || state === 'skipped'
                     ? 'text-ink-3'
                     : state === 'stopped'
                       ? 'font-medium text-blocked'
                       : 'font-medium text-ink'
-                }`}
+                  }`}
               >
                 {step}
                 {state === 'skipped' && <span aria-hidden="true"> · skipped</span>}
@@ -256,7 +254,7 @@ export function Section({
   return (
     <section
       aria-labelledby={headingId}
-      className={`rounded-lg border p-4 sm:p-5 ${TONE_SURFACE[tone]} ${className}`}
+      className={`rounded-xl border p-4 sm:p-5 shadow-xs ${TONE_SURFACE[tone]} ${className}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -329,13 +327,14 @@ export function Notice({
   onDismiss?: () => void;
   action?: React.ReactNode;
 }) {
+  const Icon = tone === 'safe' ? CheckCircle2 : tone === 'neutral' ? Info : AlertTriangle;
   return (
     <div
       role={tone === 'blocked' ? 'alert' : 'status'}
       className={`detail-in rounded-lg border p-4 text-sm ${TONE_SURFACE[tone]}`}
     >
       <div className="flex items-start gap-3">
-        <AlertTriangle
+        <Icon
           className={`mt-0.5 h-4 w-4 shrink-0 ${TONE_TEXT[tone]}`}
           aria-hidden="true"
         />
@@ -369,37 +368,93 @@ export function Trail({
 }) {
   if (logs.length === 0) return <p className="text-sm text-ink-3">{empty}</p>;
   return (
-    <ol>
+    <ol className="divide-y divide-rule">
       {logs.map((log) => {
         const tone = eventTone(log.action);
+        const stamp = formatStampParts(log.timestamp);
+        const isPayPalEvent =
+          !log.isSimulated &&
+          (log.actor === 'PAYPAL_WEBHOOK' || log.action.includes('PAYPAL'));
+        const isCredit =
+          log.action.includes('INVOICE_PAID') || log.action.includes('PAYMENT_RECEIVED');
+        const isPayoutDebit =
+          log.action.includes('DISBURSED') || log.action.includes('PAYOUT_SENT');
+
         return (
           <li
             key={log.id}
-            className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-0.5 border-t border-rule py-2.5 text-sm first:border-t-0 sm:grid-cols-[7.5rem_1fr_auto]"
+            className="grid grid-cols-1 gap-x-4 gap-y-1.5 py-3 text-sm sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-start"
           >
-            <time dateTime={log.timestamp} className="mono pt-0.5 text-xs text-ink-3">
-              {formatStamp(log.timestamp)}
-            </time>
+            <div className="flex items-center justify-between gap-2 sm:block">
+              <time dateTime={log.timestamp} className="mono block pt-0.5 text-xs leading-snug text-ink-2">
+                <span className="block font-medium">{stamp.date}</span>
+                <span className="block text-ink-3">{stamp.time}</span>
+              </time>
+              {typeof log.amountCents === 'number' && (
+                <span
+                  className={`money text-xs font-semibold sm:hidden ${
+                    tone === 'blocked'
+                      ? 'text-blocked'
+                      : isCredit
+                        ? 'text-safe'
+                        : 'text-ink'
+                  }`}
+                >
+                  {isCredit ? '+' : isPayoutDebit ? '−' : ''}
+                  {formatCentsToUSD(log.amountCents)}
+                </span>
+              )}
+            </div>
+
             <div className="min-w-0">
-              <p className="flex items-center gap-2 text-ink">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[tone]}`}
                   aria-hidden="true"
                 />
-                <span className={tone === 'blocked' ? 'font-medium text-blocked' : ''}>
+                <span
+                  className={
+                    tone === 'blocked'
+                      ? 'font-semibold text-blocked'
+                      : tone === 'safe'
+                        ? 'font-medium text-ink'
+                        : 'font-medium text-ink'
+                  }
+                >
                   {eventLabel(log.action)}
                 </span>
-              </p>
-              <p className="mt-0.5 text-xs leading-relaxed text-ink-2">{log.details}</p>
-              <p className="mt-0.5 text-xs text-ink-3">
-                {actorLabel(log.actor)}
-                {log.isSimulated ? ' · simulated' : ''}
-              </p>
+                {log.isSimulated ? (
+                  <span className="rounded border border-rule-strong bg-paper px-1.5 py-0.5 text-xs font-medium text-ink-2">
+                    Simulated
+                  </span>
+                ) : isPayPalEvent ? (
+                  <span className="rounded border border-focus/30 bg-focus/10 px-1.5 py-0.5 text-xs font-medium text-focus">
+                    PayPal Sandbox
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 break-words text-xs leading-relaxed text-ink-2">{log.details}</p>
+              <p className="mt-1 text-xs text-ink-3">Actor: {actorLabel(log.actor)}</p>
             </div>
+
             {typeof log.amountCents === 'number' && (
-              <span className="money col-start-2 text-xs font-medium text-ink-2 sm:col-start-auto sm:pt-0.5 sm:text-right">
-                {formatCentsToUSD(log.amountCents)}
-              </span>
+              <div className="hidden text-right sm:block sm:pt-0.5">
+                <span
+                  className={`money whitespace-nowrap text-xs font-semibold ${
+                    tone === 'blocked'
+                      ? 'text-blocked'
+                      : isCredit
+                        ? 'text-safe'
+                        : 'text-ink'
+                  }`}
+                >
+                  {isCredit ? '+' : isPayoutDebit ? '−' : ''}
+                  {formatCentsToUSD(log.amountCents)}
+                </span>
+                {tone === 'blocked' && (
+                  <span className="block text-xs font-medium text-blocked">Prevented</span>
+                )}
+              </div>
             )}
           </li>
         );

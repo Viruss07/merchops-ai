@@ -46,6 +46,9 @@ cp .env.example .env.local
 Add your credentials:
 ```bash
 DEMO_AS_OF=2026-11-03
+DEMO_CUSTOMER_EMAIL="<your_sandbox_personal_customer_email>" # e.g. pays Apex invoice ($1,500)
+DEMO_VENDOR_EMAIL="<your_sandbox_personal_vendor_email>"     # e.g. receives Nexus Cloud payout ($400)
+AI_DAILY_CAP=1000
 PAYPAL_API_BASE_URL="https://api-m.sandbox.paypal.com"
 PAYPAL_CLIENT_ID="<your_sandbox_client_id>"
 PAYPAL_CLIENT_SECRET="<your_sandbox_client_secret>"

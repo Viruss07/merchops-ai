@@ -14,14 +14,20 @@ import {
   Bill,
   AuditLogEntry,
   PayoutRailMode,
+  PayPalBalanceSnapshot,
   StateSnapshot,
 } from '@/types';
 import {
   DEFAULT_FORECAST_DAYS,
   DEFAULT_MIN_RESERVE_CENTS,
   DEMO_AS_OF,
+  PAYPAL_PAYOUT_FEE_CENTS,
   PAYPAL_SANDBOX_ENABLED,
 } from '@/lib/config';
+import {
+  createUnavailablePayPalBalance,
+  PAYPAL_SANDBOX_ACCOUNTS_URL,
+} from '@/lib/paypalBalance';
 import { calculatePayoutFeeCents, isValidCents } from '@/lib/money';
 
 export const INITIAL_ACCOUNT: MerchantAccount = {
@@ -44,13 +50,14 @@ export function createInitialInvoices(): Invoice[] {
   const beaconDueDate = '2026-11-15';
   const apexDaysOverdue = Math.max(0, calculateDaysBetween(apexDueDate, DEMO_AS_OF));
   const beaconDaysOverdue = Math.max(0, calculateDaysBetween(beaconDueDate, DEMO_AS_OF));
+  const customerEmail = process.env.DEMO_CUSTOMER_EMAIL?.trim() || 'billing@apexcorp.test';
 
   return [
     {
       id: 'inv-apex-01',
       invoiceNumber: 'INV-2026-089',
       customerName: 'Apex Corp',
-      customerEmail: 'billing@apexcorp.test',
+      customerEmail,
       amountCents: 150000, // $1,500.00
       dueDate: apexDueDate,
       daysOverdue: apexDaysOverdue,
@@ -77,13 +84,14 @@ export function createInitialBills(): Bill[] {
   const nexusDueDate = '2026-11-20';
   const acmeDaysUntilDue = calculateDaysBetween(DEMO_AS_OF, acmeDueDate);
   const nexusDaysUntilDue = calculateDaysBetween(DEMO_AS_OF, nexusDueDate);
+  const vendorEmail = process.env.DEMO_VENDOR_EMAIL?.trim();
 
   return [
     {
       id: 'bill-acme-01',
       billNumber: 'BILL-SUP-401',
       vendorName: 'Acme Supplies',
-      vendorEmail: 'receivables@acmesupplies.test',
+      vendorEmail: vendorEmail || 'receivables@acmesupplies.test',
       amountCents: 300000, // $3,000.00
       dueDate: acmeDueDate,
       daysUntilDue: acmeDaysUntilDue,
@@ -95,7 +103,7 @@ export function createInitialBills(): Bill[] {
       id: 'bill-cloud-02',
       billNumber: 'BILL-OPS-104',
       vendorName: 'Nexus Cloud Services',
-      vendorEmail: 'billing@nexuscloud.test',
+      vendorEmail: vendorEmail || 'billing@nexuscloud.test',
       amountCents: 40000, // $400.00
       dueDate: nexusDueDate,
       daysUntilDue: nexusDaysUntilDue,
@@ -151,6 +159,7 @@ interface DemoStoreState {
   auditLogs: AuditLogEntry[];
   idempotencyMap: Map<string, IdempotencyOutcome>;
   payoutEpoch: string;
+  paypalBalance: PayPalBalanceSnapshot;
 }
 
 // Next.js route handlers can be bundled as separate entrypoints. Keeping the
@@ -177,6 +186,7 @@ const storeState: DemoStoreState =
     auditLogs: structuredClone(INITIAL_AUDIT_LOGS),
     idempotencyMap: new Map<string, IdempotencyOutcome>(),
     payoutEpoch: newPayoutEpoch(),
+    paypalBalance: createUnavailablePayPalBalance(),
   };
 
 globalForStore.__merchops_demo_store__ = storeState;
@@ -193,6 +203,9 @@ export const demoStore = {
       invoices: structuredClone(storeState.invoices),
       bills: structuredClone(storeState.bills),
       auditLogs: structuredClone(storeState.auditLogs),
+      paypalBalance: structuredClone(
+        (storeState.paypalBalance ??= createUnavailablePayPalBalance())
+      ),
       capabilities: {
         paypalSandboxEnabled: PAYPAL_SANDBOX_ENABLED,
         payoutMode: getPayoutMode(),
@@ -202,6 +215,7 @@ export const demoStore = {
         asOfDate: DEMO_AS_OF,
         forecastDays: DEFAULT_FORECAST_DAYS,
         payoutEpoch: (storeState.payoutEpoch ??= newPayoutEpoch()),
+        paypalPayoutFeeCents: PAYPAL_PAYOUT_FEE_CENTS,
       },
     };
   },
@@ -467,6 +481,7 @@ export const demoStore = {
     }
 
     bill.status = 'IN_FLIGHT';
+    bill.paypalBatchStatus = bill.paypalBatchStatus ?? 'PENDING';
     request.status = 'IN_FLIGHT';
 
     storeState.auditLogs.unshift({
@@ -488,6 +503,7 @@ export const demoStore = {
     batchId: string;
     paypalStatus: string;
     response: unknown;
+    actualFeeCents?: number | null;
   }): StateSnapshot {
     const bill = storeState.bills.find((b) => b.id === input.billId);
     const request = storeState.idempotencyMap.get(input.idempotencyKey);
@@ -497,6 +513,12 @@ export const demoStore = {
     }
     if (bill.status !== 'IN_FLIGHT' || request.status !== 'IN_FLIGHT') {
       throw new Error('Invalid payout state');
+    }
+
+    bill.paypalBatchId = input.batchId;
+    bill.paypalBatchStatus = input.paypalStatus;
+    if (input.actualFeeCents != null && isValidCents(input.actualFeeCents)) {
+      bill.actualFeeCents = input.actualFeeCents;
     }
 
     request.paypalBatchId = input.batchId;
@@ -523,6 +545,7 @@ export const demoStore = {
     externalRef?: string;
     response: unknown;
     actor?: AuditLogEntry['actor'];
+    actualFeeCents?: number | null;
   }): StateSnapshot {
     const bill = storeState.bills.find((b) => b.id === input.billId);
     const request = storeState.idempotencyMap.get(input.idempotencyKey);
@@ -541,13 +564,27 @@ export const demoStore = {
     }
 
     bill.status = 'DISBURSED';
+    bill.paypalBatchStatus = input.isRealPayPal ? 'SUCCESS' : 'SIMULATED';
     storeState.account.clearedBalanceCents -= bill.amountCents;
 
     request.status = 'SUCCEEDED';
     request.response = input.response;
     if (input.externalRef) {
       request.paypalBatchId = input.externalRef;
+      bill.paypalBatchId = input.externalRef;
+    } else if (request.paypalBatchId) {
+      bill.paypalBatchId = request.paypalBatchId;
     }
+
+    const actualFeeCents =
+      input.actualFeeCents != null && isValidCents(input.actualFeeCents)
+        ? input.actualFeeCents
+        : null;
+    if (actualFeeCents !== null) {
+      bill.actualFeeCents = actualFeeCents;
+    }
+    const feeSuffix =
+      actualFeeCents !== null ? ` Actual PayPal fee: $${(actualFeeCents / 100).toFixed(2)}.` : '';
 
     storeState.auditLogs.unshift({
       id: crypto.randomUUID(),
@@ -555,7 +592,7 @@ export const demoStore = {
       actor: input.actor ?? 'MERCHANT',
       action: input.isRealPayPal ? 'PAYOUT_DISBURSED_PAYPAL' : 'PAYOUT_DISBURSED_SIMULATED',
       details: input.isRealPayPal
-        ? `PayPal Sandbox confirmed payout batch ${input.externalRef ?? 'unknown'} to ${bill.vendorName} (${bill.billNumber}); ledger debited -$${(bill.amountCents / 100).toFixed(2)}.`
+        ? `PayPal Sandbox confirmed payout batch ${input.externalRef ?? 'unknown'} to ${bill.vendorName} (${bill.billNumber}); ledger debited -$${(bill.amountCents / 100).toFixed(2)}.${feeSuffix}`
         : `Payout to ${bill.vendorName} (${bill.billNumber}) authorized and disbursed (-$${(bill.amountCents / 100).toFixed(2)}).`,
       amountCents: bill.amountCents,
       isSimulated: !input.isRealPayPal,
@@ -565,7 +602,15 @@ export const demoStore = {
       storeState.account.payoutVerification = {
         batchId: input.externalRef,
         verifiedAt: new Date().toISOString(),
+        actualFeeCents,
       };
+    }
+
+    // Clear active pre-payout failure banner after real PayPal settlement succeeds;
+    // historical warning entries remain preserved permanently in auditLogs.
+    if (input.isRealPayPal && storeState.paypalBalance) {
+      storeState.paypalBalance.lastInsufficientFundsAt = null;
+      storeState.paypalBalance.lastInsufficientFundsMessage = null;
     }
 
     return this.getSnapshot();
@@ -597,12 +642,16 @@ export const demoStore = {
     }
 
     bill.status = 'FAILED';
+    bill.paypalBatchStatus = 'FAILED';
 
     request.status = 'FAILED';
     request.code = input.code;
     request.message = input.message;
     if (input.externalRef) {
       request.paypalBatchId = input.externalRef;
+      bill.paypalBatchId = input.externalRef;
+    } else if (request.paypalBatchId) {
+      bill.paypalBatchId = request.paypalBatchId;
     }
 
     storeState.auditLogs.unshift({
@@ -641,19 +690,54 @@ export const demoStore = {
     // be retried with a fresh payout while PayPal may still settle it.
     request.code = input.code;
     request.message = input.message;
-    if (input.paypalBatchId) request.paypalBatchId = input.paypalBatchId;
-    if (input.paypalStatus) request.paypalStatus = input.paypalStatus;
+    if (input.paypalBatchId) {
+      request.paypalBatchId = input.paypalBatchId;
+      bill.paypalBatchId = input.paypalBatchId;
+    } else if (request.paypalBatchId) {
+      bill.paypalBatchId = request.paypalBatchId;
+    }
+    if (input.paypalStatus) {
+      request.paypalStatus = input.paypalStatus;
+      bill.paypalBatchStatus = input.paypalStatus;
+    }
 
-    storeState.auditLogs.unshift({
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-      actor: 'SYSTEM',
-      action: 'PAYOUT_OUTCOME_UNKNOWN',
-      details: `Payout to ${bill.vendorName} (${bill.billNumber}) has an unconfirmed outcome: ${input.message} The bill remains in flight and must be reconciled.`,
-      amountCents: bill.amountCents,
-      isSimulated: false,
-    });
+    const prevUnknown =
+      storeState.auditLogs[0]?.action === 'PAYOUT_OUTCOME_UNKNOWN' &&
+      storeState.auditLogs[0]?.details.includes(bill.billNumber) &&
+      storeState.auditLogs[0]?.details.includes(input.message);
 
+    if (!prevUnknown) {
+      storeState.auditLogs.unshift({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        actor: 'SYSTEM',
+        action: 'PAYOUT_OUTCOME_UNKNOWN',
+        details: `Payout to ${bill.vendorName} (${bill.billNumber}) has an unconfirmed outcome: ${input.message} The bill remains in flight and must be reconciled.`,
+        amountCents: bill.amountCents,
+        isSimulated: false,
+      });
+    }
+
+    return this.getSnapshot();
+  },
+
+  recordPayoutSyncStatus(input: {
+    billId: string;
+    idempotencyKey: string;
+    batchId: string;
+    paypalStatus: string;
+  }): StateSnapshot {
+    const bill = storeState.bills.find((b) => b.id === input.billId);
+    const request = storeState.idempotencyMap.get(input.idempotencyKey);
+    if (!bill || !request || request.billId !== bill.id) {
+      throw new Error('Invalid payout state');
+    }
+    if (bill.status === 'IN_FLIGHT') {
+      bill.paypalBatchId = input.batchId;
+      bill.paypalBatchStatus = input.paypalStatus;
+      request.paypalBatchId = input.batchId;
+      request.paypalStatus = input.paypalStatus;
+    }
     return this.getSnapshot();
   },
 
@@ -685,6 +769,50 @@ export const demoStore = {
     return newEntry;
   },
 
+  setPayPalBalanceState(balance: PayPalBalanceSnapshot): StateSnapshot {
+    const prev = (storeState.paypalBalance ??= createUnavailablePayPalBalance());
+    if (balance.availability === 'AVAILABLE') {
+      storeState.paypalBalance = structuredClone(balance);
+    } else {
+      storeState.paypalBalance = {
+        ...structuredClone(balance),
+        lastInsufficientFundsAt:
+          balance.lastInsufficientFundsAt ?? prev.lastInsufficientFundsAt ?? null,
+        lastInsufficientFundsMessage:
+          balance.lastInsufficientFundsMessage ?? prev.lastInsufficientFundsMessage ?? null,
+      };
+    }
+    return this.getSnapshot();
+  },
+
+  recordPayPalBalanceBlock(input: {
+    billId: string;
+    availableCents: number;
+    feeCents: number;
+    shortfallCents: number;
+  }): StateSnapshot {
+    const bill = storeState.bills.find((b) => b.id === input.billId);
+    const vendorLabel = bill ? `${bill.vendorName} (${bill.billNumber})` : input.billId;
+    const requiredCents = (bill?.amountCents ?? 0) + input.feeCents;
+    storeState.auditLogs.unshift({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor: 'SYSTEM',
+      action: 'PAYOUT_BLOCKED_PAYPAL_BALANCE',
+      details: `Pre-payout PayPal Sandbox check blocked ${vendorLabel}: requires $${(requiredCents / 100).toFixed(2)} (incl. $${(input.feeCents / 100).toFixed(2)} PayPal fee), Sandbox wallet holds $${(input.availableCents / 100).toFixed(2)} ($${(input.shortfallCents / 100).toFixed(2)} short). Replenish at ${PAYPAL_SANDBOX_ACCOUNTS_URL}.`,
+      amountCents: bill?.amountCents,
+      isSimulated: false,
+    });
+    return this.getSnapshot();
+  },
+
+  recordPayPalInsufficientFunds(input: { message: string }): StateSnapshot {
+    const current = (storeState.paypalBalance ??= createUnavailablePayPalBalance());
+    current.lastInsufficientFundsAt = new Date().toISOString();
+    current.lastInsufficientFundsMessage = input.message;
+    return this.getSnapshot();
+  },
+
   /**
    * Run `fn` against a fresh seeded copy of the state, then restore the live
    * state. `fn` must be synchronous: Node runs it to completion before any other
@@ -698,12 +826,14 @@ export const demoStore = {
       bills: storeState.bills,
       auditLogs: storeState.auditLogs,
       idempotencyMap: storeState.idempotencyMap,
+      paypalBalance: storeState.paypalBalance,
     };
     storeState.account = structuredClone(INITIAL_ACCOUNT);
     storeState.invoices = structuredClone(createInitialInvoices());
     storeState.bills = structuredClone(createInitialBills());
     storeState.auditLogs = [];
     storeState.idempotencyMap = new Map<string, IdempotencyOutcome>();
+    storeState.paypalBalance = createUnavailablePayPalBalance();
     try {
       return fn();
     } finally {
@@ -718,6 +848,7 @@ export const demoStore = {
     storeState.auditLogs = structuredClone(INITIAL_AUDIT_LOGS);
     storeState.idempotencyMap.clear();
     storeState.payoutEpoch = newPayoutEpoch();
+    storeState.paypalBalance = createUnavailablePayPalBalance();
     return this.getSnapshot();
   },
 };

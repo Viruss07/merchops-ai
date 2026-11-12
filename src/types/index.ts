@@ -17,6 +17,22 @@ export type PayoutRailMode = 'SIMULATION' | 'SANDBOX_UNVERIFIED' | 'SANDBOX_VERI
 export interface PayoutVerification {
   batchId: string;
   verifiedAt: string;
+  actualFeeCents?: number | null;
+}
+
+export type PayPalBalanceStatus = 'SUFFICIENT' | 'LOW' | 'INSUFFICIENT' | 'UNAVAILABLE';
+
+export type PayPalBalanceAvailability = 'AVAILABLE' | 'UNAVAILABLE';
+
+export interface PayPalBalanceSnapshot {
+  availability: PayPalBalanceAvailability;
+  availableCents: number | null;
+  currency: 'USD';
+  checkedAt: string | null;
+  source: 'PAYPAL_REPORTING_API' | 'UNVERIFIED';
+  reason: string | null;
+  lastInsufficientFundsAt: string | null;
+  lastInsufficientFundsMessage: string | null;
 }
 
 export interface Invoice {
@@ -47,6 +63,9 @@ export interface Bill {
   status: BillStatus;
   description: string;
   category: string;
+  paypalBatchId?: string;
+  paypalBatchStatus?: string;
+  actualFeeCents?: number | null;
 }
 
 export interface MerchantAccount {
@@ -97,6 +116,7 @@ export interface StateSnapshot {
   invoices: Invoice[];
   bills: Bill[];
   auditLogs: AuditLogEntry[];
+  paypalBalance: PayPalBalanceSnapshot;
   capabilities: {
     paypalSandboxEnabled: boolean;
     payoutMode: PayoutRailMode;
@@ -107,5 +127,6 @@ export interface StateSnapshot {
     forecastDays: number;
     /** Changes on every reset and server start; part of each PayPal-Request-Id. */
     payoutEpoch: string;
+    paypalPayoutFeeCents: number;
   };
 }

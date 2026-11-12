@@ -167,3 +167,33 @@ test('audit IDs are unique (randomUUID), simulated invoice actor is MERCHANT', (
   const uniqueIds = new Set(ids);
   assert.equal(ids.length, uniqueIds.size);
 });
+
+test('store: DEMO_CUSTOMER_EMAIL and DEMO_VENDOR_EMAIL defaults vs overrides', () => {
+  const origCustomer = process.env.DEMO_CUSTOMER_EMAIL;
+  const origVendor = process.env.DEMO_VENDOR_EMAIL;
+  try {
+    delete process.env.DEMO_CUSTOMER_EMAIL;
+    delete process.env.DEMO_VENDOR_EMAIL;
+    demoStore.resetDemoData();
+    const defaultInvoices = demoStore.getInvoices();
+    const defaultBills = demoStore.getBills();
+    assert.equal(defaultInvoices.find(i => i.id === 'inv-apex-01')?.customerEmail, 'billing@apexcorp.test');
+    assert.equal(defaultBills.find(b => b.id === 'bill-cloud-02')?.vendorEmail, 'billing@nexuscloud.test');
+    assert.equal(defaultBills.find(b => b.id === 'bill-acme-01')?.vendorEmail, 'receivables@acmesupplies.test');
+
+    process.env.DEMO_CUSTOMER_EMAIL = 'custom-judge@example.com';
+    process.env.DEMO_VENDOR_EMAIL = 'custom-vendor@example.com';
+    demoStore.resetDemoData();
+    const overriddenInvoices = demoStore.getInvoices();
+    const overriddenBills = demoStore.getBills();
+    assert.equal(overriddenInvoices.find(i => i.id === 'inv-apex-01')?.customerEmail, 'custom-judge@example.com');
+    assert.equal(overriddenBills.find(b => b.id === 'bill-cloud-02')?.vendorEmail, 'custom-vendor@example.com');
+    assert.equal(overriddenBills.find(b => b.id === 'bill-acme-01')?.vendorEmail, 'custom-vendor@example.com');
+  } finally {
+    if (origCustomer !== undefined) process.env.DEMO_CUSTOMER_EMAIL = origCustomer;
+    else delete process.env.DEMO_CUSTOMER_EMAIL;
+    if (origVendor !== undefined) process.env.DEMO_VENDOR_EMAIL = origVendor;
+    else delete process.env.DEMO_VENDOR_EMAIL;
+    demoStore.resetDemoData();
+  }
+});

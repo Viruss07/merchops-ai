@@ -1,4 +1,4 @@
-import type { StateSnapshot, Invoice } from '@/types';
+import type { PayPalBalanceSnapshot, StateSnapshot, Invoice } from '@/types';
 import type { CashPlanProposal } from '@/lib/plan/types';
 
 export class ApiError extends Error {
@@ -55,6 +55,9 @@ export interface SyncPayoutResponse {
   status: PayoutSettlementStatus;
   billId: string;
   batchId?: string | null;
+  paypalStatus?: string | null;
+  transientError?: boolean;
+  pollable?: boolean;
   message: string;
   snapshot: StateSnapshot;
 }
@@ -141,6 +144,15 @@ export function getState(signal?: AbortSignal): Promise<StateSnapshot> {
   return request<StateSnapshot>('/api/state', { method: 'GET', signal });
 }
 
+export function getPayPalBalance(
+  signal?: AbortSignal
+): Promise<{ paypalBalance: PayPalBalanceSnapshot; snapshot: StateSnapshot }> {
+  return request<{ paypalBalance: PayPalBalanceSnapshot; snapshot: StateSnapshot }>(
+    '/api/paypal/balance',
+    { method: 'GET', signal }
+  );
+}
+
 export function proposePlan(signal?: AbortSignal): Promise<CashPlanProposal> {
   return request<CashPlanProposal>('/api/ai/propose-plan', {
     method: 'POST',
@@ -203,10 +215,25 @@ export interface CreatePayPalInvoiceResponse {
   snapshot: StateSnapshot;
 }
 
+export type InvoiceSyncOutcome =
+  | 'PAID'
+  | 'ALREADY_PAID'
+  | 'PARTIALLY_PAID'
+  | 'UNPAID'
+  | 'NO_ACTIVE_INVOICES';
+
 export interface SyncInvoicesResponse {
   success: boolean;
   message: string;
   updated: number;
+  outcome?: InvoiceSyncOutcome;
+  credited?: boolean;
+  paypalStatus?: string;
+  paidAmountCents?: number;
+  dueAmountCents?: number;
+  totalAmountCents?: number;
+  partiallyPaidCount?: number;
+  unpaidCount?: number;
   snapshot: StateSnapshot;
 }
 

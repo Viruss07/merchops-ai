@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateRunway } from '../src/lib/runway';
+import { calculateRunway, findLowestBalancePoint } from '../src/lib/runway';
 import { demoStore } from '../src/lib/store';
 import { DEMO_AS_OF } from '../src/lib/config';
 
@@ -184,4 +184,100 @@ test('UTC/DST: startDate 2026-03-01, day 8 date === 2026-03-09 and day 10 === 20
 
   assert.equal(forecast.days[7].date, '2026-03-09'); // day 8
   assert.equal(forecast.days[9].date, '2026-03-11'); // day 10
+});
+
+test('findLowestBalancePoint distinguishes opening breach, first breach day, and deeper future trough', () => {
+  const baselineForecast = calculateRunway({
+    clearedBalanceCents: 420000,
+    minReserveCents: 200000,
+    invoices: [],
+    bills: [
+      {
+        id: 'b-d10',
+        billNumber: 'B-10',
+        vendorName: 'Vendor A',
+        vendorEmail: 'a@example.com',
+        amountCents: 300000,
+        dueDate: '2026-11-13',
+        status: 'PENDING',
+        daysUntilDue: 10,
+        description: 'Day 10 bill',
+        category: 'Inventory',
+      },
+      {
+        id: 'b-d15',
+        billNumber: 'B-15',
+        vendorName: 'Vendor B',
+        vendorEmail: 'b@example.com',
+        amountCents: 150000,
+        dueDate: '2026-11-18',
+        status: 'PENDING',
+        daysUntilDue: 15,
+        description: 'Day 15 bill',
+        category: 'Ops',
+      },
+    ],
+    startDate: '2026-11-03',
+  });
+
+  assert.equal(baselineForecast.firstBreachDay, 10);
+  assert.equal(baselineForecast.minBalanceCents, -30000);
+  const peakPoint = findLowestBalancePoint(baselineForecast);
+  assert.equal(peakPoint.isOpening, false);
+  assert.equal(peakPoint.dayNumber, 15);
+  assert.equal(peakPoint.dayIndex, 14);
+
+  const openingBreachForecast = calculateRunway({
+    clearedBalanceCents: 150000,
+    minReserveCents: 200000,
+    invoices: [],
+    bills: [
+      {
+        id: 'b-d5',
+        billNumber: 'B-05',
+        vendorName: 'Vendor C',
+        vendorEmail: 'c@example.com',
+        amountCents: 100000,
+        dueDate: '2026-11-08',
+        status: 'PENDING',
+        daysUntilDue: 5,
+        description: 'Day 5 bill',
+        category: 'Ops',
+      },
+    ],
+    startDate: '2026-11-03',
+  });
+
+  assert.equal(openingBreachForecast.firstBreachDay, 0);
+  assert.equal(openingBreachForecast.minBalanceCents, 50000);
+  const deeperLater = findLowestBalancePoint(openingBreachForecast);
+  assert.equal(deeperLater.isOpening, false);
+  assert.equal(deeperLater.dayNumber, 5);
+  assert.equal(deeperLater.dayIndex, 4);
+
+  const openingMinForecast = calculateRunway({
+    clearedBalanceCents: 250000,
+    minReserveCents: 200000,
+    invoices: [
+      {
+        id: 'inv-1',
+        invoiceNumber: 'INV-1',
+        customerName: 'Buyer',
+        customerEmail: 'buyer@example.com',
+        amountCents: 100000,
+        dueDate: '2026-11-06',
+        daysOverdue: 0,
+        status: 'CURRENT',
+        description: 'Current invoice',
+      },
+    ],
+    bills: [],
+    startDate: '2026-11-03',
+  });
+
+  assert.equal(openingMinForecast.firstBreachDay, undefined);
+  const openingOnly = findLowestBalancePoint(openingMinForecast);
+  assert.equal(openingOnly.isOpening, true);
+  assert.equal(openingOnly.dayNumber, 0);
+  assert.equal(openingOnly.dayIndex, -1);
 });

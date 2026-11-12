@@ -20,45 +20,51 @@ const EXPLORE = [
   {
     href: '/runway',
     icon: LineChart,
-    title: 'Cash forecast',
-    body: 'Day-by-day balance for the next 30 days, and what changes it.',
+    color: 'border border-focus/30 bg-focus/10 text-focus',
+    title: 'Cash Forecast',
+    body: 'Interactive 30-day runway projection detailing daily inflows, outflows, and reserve checks.',
   },
   {
     href: '/plans',
     icon: Bot,
-    title: 'AI plans',
-    body: 'What the AI suggested and every rule each plan was checked against.',
+    color: 'border border-focus/30 bg-focus/10 text-focus',
+    title: 'AI Recovery Plans',
+    body: 'Compare AI-suggested cash strategies side-by-side against deterministic policy checks.',
   },
   {
     href: '/invoices',
     icon: FileText,
-    title: 'Invoices',
-    body: 'Money customers owe. Draft a reminder with AI or send a real PayPal invoice.',
+    color: 'border border-safe/30 bg-safe/10 text-safe',
+    title: 'Invoices & Receivables',
+    body: 'Overdue receivables with AI reminder drafts and PayPal Invoicing tracking.',
   },
   {
     href: '/bills',
     icon: Receipt,
-    title: 'Bills',
-    body: 'Money the business owes. Each payout shows the safety check before you approve.',
+    color: 'border border-risk/30 bg-risk/10 text-risk',
+    title: 'Bills & Supplier Payouts',
+    body: 'Vendor disbursements gated by fee-inclusive reserve guard checks.',
   },
   {
     href: '/ledger',
     icon: ListChecks,
-    title: 'Audit log',
-    body: 'Every action, who did it, and what the rules said. Nothing can be edited.',
+    color: 'border border-rule-strong bg-paper text-ink-2',
+    title: 'Immutable Audit Log',
+    body: 'Append-only ledger recording timestamps, transaction IDs, decisions, and outcomes.',
   },
   {
     href: '/bench',
     icon: ShieldCheck,
-    title: 'Safety tests',
-    body: '12 attacks run live against the real guard code: 12 of 12 should be blocked.',
+    color: 'border border-blocked/30 bg-blocked/10 text-blocked',
+    title: 'Safety Test Bench',
+    body: '12 deterministic security checks tested live against payout and math policy guards.',
   },
 ];
 
 export default function HomePage() {
   const { setSnapshot, resetCount } = useAppState();
   return (
-    <WithState label="Loading the demo">
+    <WithState label="Loading financial cockpit">
       {({ snapshot, forecast }) => (
         <>
           <Journey
@@ -69,38 +75,44 @@ export default function HomePage() {
           />
 
           {snapshot.capabilities.paypalSandboxEnabled && (
-            <div className="mx-auto w-full max-w-6xl px-4 pb-12 sm:px-6">
+            <div className="mx-auto mt-6 w-full max-w-6xl px-4 pb-8 sm:px-6">
               <LiveRun key={resetCount} snapshot={snapshot} />
             </div>
           )}
 
           <section
             aria-labelledby="explore-h"
-            className="mx-auto w-full max-w-6xl border-t border-rule px-4 pb-16 pt-10 sm:px-6"
+            className="mx-auto w-full max-w-6xl border-t border-rule px-4 pb-16 pt-8 sm:px-6"
           >
-            <h2 id="explore-h" className="text-xl font-semibold">
-              Explore on your own
-            </h2>
-            <p className="mt-1 text-sm text-ink-2">
-              Each page shows the same live data as the steps above.
-            </p>
-            <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {EXPLORE.map(({ href, icon: Icon, title, body }) => (
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 id="explore-h" className="text-xl font-bold tracking-tight text-ink">
+                  Deep-Dive System Rooms
+                </h2>
+                <p className="mt-1 text-sm text-ink-2">
+                  Inspect the underlying live state, policies, and ledger across dedicated views.
+                </p>
+              </div>
+            </div>
+            <ul className="mt-6 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+              {EXPLORE.map(({ href, icon: Icon, color, title, body }) => (
                 <li key={href}>
                   <Link
                     href={href}
-                    className="group flex h-full items-start gap-3 rounded-lg border border-rule bg-panel p-4 no-underline transition-colors hover:border-rule-strong hover:bg-paper"
+                    className="group flex h-full items-start gap-3.5 rounded-xl border border-rule bg-panel p-4 no-underline shadow-xs transition-all hover:border-rule-strong hover:shadow-sm"
                   >
-                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-ink-2" aria-hidden="true" />
+                    <div className={`mt-0.5 rounded-lg p-2.5 ${color}`}>
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </div>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2 text-sm font-semibold text-ink">
+                      <span className="flex items-center justify-between gap-2 text-sm font-bold text-ink">
                         {title}
                         <ArrowRight
-                          className="h-4 w-4 text-ink-3 transition-colors group-hover:text-ink"
+                          className="h-4 w-4 text-ink-3 transition-transform group-hover:translate-x-0.5 group-hover:text-ink"
                           aria-hidden="true"
                         />
                       </span>
-                      <span className="mt-1 block text-sm leading-relaxed text-ink-2">{body}</span>
+                      <span className="mt-1 block text-xs leading-relaxed text-ink-2">{body}</span>
                     </span>
                   </Link>
                 </li>

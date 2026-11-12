@@ -6,6 +6,8 @@ import {
   ArrowRight,
   Bot,
   Check,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   RotateCcw,
   Scale,
@@ -22,12 +24,14 @@ import {
   simulatePayment,
 } from '@/lib/apiClient';
 import { payoutCheck } from '@/lib/client/whatIf';
-import { formatDate } from '@/lib/client/states';
+import { billStatus, formatDate, invoiceStatus, isOpenBill } from '@/lib/client/states';
+import { findLowestBalancePoint } from '@/lib/runway';
+import { evaluateBillPayPalBalance } from '@/lib/paypalBalance';
 import type { RunwayForecast, StateSnapshot } from '@/types';
 import type { CashPlanProposal } from '@/lib/plan/types';
 import { RunwayInstrument } from '@/components/runway/RunwayInstrument';
 import { useAppState } from '@/components/shell/AppState';
-import { btn } from '@/components/ui/kit';
+import { StatusPill, btn } from '@/components/ui/kit';
 
 interface JourneyProps {
   snapshot: StateSnapshot;
@@ -37,13 +41,23 @@ interface JourneyProps {
 
 const PAID_STATES = ['APPROVED', 'IN_FLIGHT', 'DISBURSED'];
 
+const STEP_META = [
+  { n: 1 as const, short: 'Spot cliff', title: 'Identify the Cash Cliff' },
+  { n: 2 as const, short: 'AI plan', title: 'Ask AI for Guarded Strategies' },
+  { n: 3 as const, short: 'Guard test', title: 'Attempt Unsafe Payout (Guardrail Test)' },
+  { n: 4 as const, short: 'Collect', title: 'Collect Overdue Receivables' },
+  { n: 5 as const, short: 'Safe pay', title: 'Execute Safe Payout' },
+];
+
 /**
- * The guided demo: five numbered steps on one page, each with one button. Every step calls the
- * real API, and the chart on the right redraws from the snapshot each call returns. A step's
- * "done" state comes from the server's data where it can, so a refresh doesn't lose progress.
+ * Financial Operations Cockpit + collapsible 5-step Guided Verification Tour.
+ * Cash, safety reserve, projected low balance, and 30-day runway lead the layout; the interactive
+ * walkthrough sits cleanly tucked beneath as an expandable verification drawer.
  */
 export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
   const { reset, resetting } = useAppState();
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
+  const [selectedStep, setSelectedStep] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
   const [seen, setSeen] = useState(false);
   const [proposals, setProposals] = useState<CashPlanProposal | null>(null);
   const [blocked, setBlocked] = useState<{ deficitCents: number; message: string } | null>(null);
@@ -58,8 +72,22 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
   const apexAmount = apex ? formatCentsToUSD(apex.amountCents) : '$1,500.00';
 
   const acmePaid = !!acme && PAID_STATES.includes(acme.status);
+  const acmeFailed = acme?.status === 'FAILED';
+  const acmeInFlight = acme?.status === 'IN_FLIGHT';
   const apexPaid = apex?.status === 'PAID';
   const check = acme ? payoutCheck(snapshot, acme.id) : null;
+  const lowestPoint = findLowestBalancePoint(forecast);
+  const peakDeficit = Math.max(0, floor - forecast.minBalanceCents);
+
+  const openBills = snapshot.bills.filter(isOpenBill);
+  const openBillsTotal = openBills.reduce((s, b) => s + b.amountCents, 0);
+  const openInvoices = snapshot.invoices.filter((i) => i.status !== 'PAID');
+  const overdueInvoices = openInvoices.filter((i) => i.status === 'OVERDUE');
+  const overdueTotal = overdueInvoices.reduce((s, i) => s + i.amountCents, 0);
+  const openReceivablesTotal = openInvoices.reduce((s, i) => s + i.amountCents, 0);
+
+  const deficit = forecast.firstBreachDeficitCents ?? forecast.breachDeficitCents ?? 0;
+  const safeBuffer = forecast.minBalanceCents - floor;
 
   const done = [
     seen || !!proposals || !!blocked || apexPaid || acmePaid,
@@ -68,7 +96,9 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
     apexPaid,
     acmePaid,
   ];
-  const current = done.findIndex((d) => !d); // -1 when everything is done
+  const currentIdx = done.findIndex((d) => !d); // -1 when all 5 done
+  const naturalStep = (currentIdx === -1 ? 5 : currentIdx + 1) as 1 | 2 | 3 | 4 | 5;
+  const activeStep = selectedStep ?? naturalStep;
   const doneCount = done.filter(Boolean).length;
 
   const run = useCallback(
@@ -89,7 +119,9 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
 
   const askAi = () =>
     run(2, async () => {
-      setProposals(await proposePlan());
+      const res = await proposePlan();
+      setProposals(res);
+      setSelectedStep(2);
     });
 
   const tryPayAcme = () =>
@@ -106,6 +138,7 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
             deficitCents: typeof raw === 'number' ? raw : (check?.deficitCents ?? 0),
             message: caught.message,
           });
+          setSelectedStep(3);
           return;
         }
         throw caught;
@@ -117,6 +150,7 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
       if (!apex) return;
       const res = await simulatePayment(apex.id);
       onSnapshot(res.snapshot);
+      setSelectedStep(4);
     });
 
   const payAcme = () =>
@@ -124,6 +158,7 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
       if (!acme) return;
       const res = await authorizePayout({ billId: acme.id, executionMode: 'SIMULATION' });
       onSnapshot(res.snapshot);
+      setSelectedStep(5);
     });
 
   const restart = async () => {
@@ -132,12 +167,13 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
     setProposals(null);
     setBlocked(null);
     setError(null);
+    setSelectedStep(null);
   };
 
   const stamp = forecast.hasReserveBreach
     ? {
-        label: 'Below the reserve',
-        value: `−${formatCentsToUSD(forecast.firstBreachDeficitCents ?? forecast.breachDeficitCents ?? 0)}`,
+        label: 'Below reserve',
+        value: `−${formatCentsToUSD(deficit)}`,
       }
     : null;
 
@@ -145,327 +181,701 @@ export function Journey({ snapshot, forecast, onSnapshot }: JourneyProps) {
   const passing = proposals?.plans.filter((p) => p.verdict === 'ACCEPTED').length ?? 0;
 
   return (
-    <>
-      {/* ---------- 1. What this is, in one screen ---------- */}
-      <section className="mx-auto w-full max-w-6xl px-4 pt-8 sm:px-6 sm:pt-12">
-        <p className="text-xs font-medium uppercase tracking-[0.14em] text-ink-3">
-          PayPal AI Hackathon 2026
-        </p>
-        <h1 className="mt-2 max-w-3xl text-[34px] font-semibold leading-[1.06] tracking-[-0.03em] sm:text-[48px]">
-          An AI cash-flow assistant that can&apos;t spend your money.
-        </h1>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-2">
-          MerchOps forecasts a small business&apos;s next 30 days of cash. The AI suggests how to
-          avoid running short; fixed rules check every plan and every payment, and nothing is paid
-          until the merchant approves it.
-        </p>
-        <ul className="mt-6 grid max-w-3xl gap-3 sm:grid-cols-3">
-          {[
-            { icon: Bot, title: 'The AI suggests', body: 'Plans to chase invoices or move bills.' },
-            { icon: Scale, title: 'Rules decide', body: 'Code checks every plan and payment.' },
-            { icon: UserCheck, title: 'You approve', body: 'No money moves without a click.' },
-          ].map(({ icon: Icon, title, body }) => (
-            <li key={title} className="flex items-start gap-3 rounded-lg border border-rule bg-panel p-3">
-              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-2" aria-hidden="true" />
-              <span>
-                <span className="block text-sm font-medium text-ink">{title}</span>
-                <span className="block text-xs text-ink-2">{body}</span>
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pt-6 sm:px-6 sm:pt-8">
+      {/* ---------- 1. Cockpit Header & Primary KPI Hierarchy ---------- */}
+      <section aria-labelledby="cockpit-h">
+        <div className="flex flex-col gap-4 border-b border-rule pb-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-2">
+              <span className="font-semibold text-ink">{snapshot.account.businessName}</span>
+              <span aria-hidden="true" className="text-ink-3">
+                ·
               </span>
-            </li>
-          ))}
-        </ul>
+              <StatusPill
+                label={
+                  forecast.hasReserveBreach
+                    ? `Reserve Breach Risk · Day ${forecast.firstBreachDay}`
+                    : 'Reserve Floor Protected · 30d'
+                }
+                tone={forecast.hasReserveBreach ? 'blocked' : 'safe'}
+              />
+              {snapshot.account.payoutVerification && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-focus/30 bg-focus/10 px-2.5 py-0.5 text-xs font-medium text-focus">
+                  <Check className="h-3 w-3" aria-hidden="true" />
+                  PayPal Batch Verified
+                </span>
+              )}
+            </div>
+            <h1 id="cockpit-h" className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+              Financial Operations Cockpit
+            </h1>
+            <p className="mt-1 text-sm text-ink-2">
+              Cash policy enforcement across receivables and vendor disbursements ·{' '}
+              <span
+                className="mono text-xs text-ink-2"
+                title="Runway projections anchor to this scenario date; live PayPal settlements log UTC timestamps."
+              >
+                Scenario baseline: {formatDate(snapshot.demoConfig.asOfDate, { year: true })}
+              </span>
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/plans" className={btn.primary}>
+              <Bot className="h-4 w-4" aria-hidden="true" />
+              AI Recovery Plans
+            </Link>
+            <Link href="/bills" className={btn.secondary}>
+              Bills ({openBills.length})
+            </Link>
+            <Link href="/invoices" className={btn.secondary}>
+              Invoices ({openInvoices.length})
+            </Link>
+          </div>
+        </div>
+
+        {/* 4-Card KPI Strip: Cash, Reserve Floor, Projected Low, Runway */}
+        <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-rule bg-panel p-4 shadow-xs">
+            <dt className="text-xs font-medium text-ink-2">Cleared Cash</dt>
+            <dd className="money mt-1.5 text-2xl font-bold text-ink sm:text-3xl">
+              {formatCentsToUSD(cleared)}
+            </dd>
+            <p className="mt-1 text-xs text-ink-2">
+              {overdueTotal > 0 ? (
+                <span className="text-risk">
+                  +{formatCentsToUSD(overdueTotal)} overdue not counted
+                </span>
+              ) : openReceivablesTotal > 0 ? (
+                <span>+{formatCentsToUSD(openReceivablesTotal)} open receivables</span>
+              ) : (
+                <span className="text-safe">All receivables collected</span>
+              )}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-rule bg-panel p-4 shadow-xs">
+            <dt className="text-xs font-medium text-ink-2">Safety Reserve Floor</dt>
+            <dd className="money mt-1.5 text-2xl font-bold text-ink sm:text-3xl">
+              {formatCentsToUSD(floor)}
+            </dd>
+            <p className="mt-1 text-xs text-ink-2">Hard deterministic rule · PayPal fees included</p>
+          </div>
+
+          <div
+            className={`rounded-xl border p-4 shadow-xs ${
+              forecast.hasReserveBreach
+                ? 'border-blocked/45 bg-blocked-field/45'
+                : 'border-safe/45 bg-safe-field/45'
+            }`}
+          >
+            <dt className="text-xs font-medium text-ink-2">Projected 30-Day Low</dt>
+            <dd
+              className={`money mt-1.5 text-2xl font-bold sm:text-3xl ${
+                forecast.hasReserveBreach ? 'text-blocked' : 'text-safe'
+              }`}
+            >
+              {formatCentsToUSD(forecast.minBalanceCents)}
+            </dd>
+            <p className="mt-1 text-xs font-medium text-ink-2">
+              {forecast.hasReserveBreach ? (
+                <span className="text-blocked">
+                  −{formatCentsToUSD(peakDeficit)} below floor{' '}
+                  {lowestPoint.isOpening ? 'today' : `on Day ${lowestPoint.dayNumber}`}
+                  {forecast.firstBreachDay !== undefined &&
+                  (lowestPoint.isOpening
+                    ? forecast.firstBreachDay !== 0
+                    : lowestPoint.dayNumber !== forecast.firstBreachDay)
+                    ? forecast.firstBreachDay === 0
+                      ? ' (breach today)'
+                      : ` (breach Day ${forecast.firstBreachDay})`
+                    : ''}
+                </span>
+              ) : (
+                <span className="text-safe">+{formatCentsToUSD(safeBuffer)} buffer above floor</span>
+              )}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-rule bg-panel p-4 shadow-xs">
+            <dt className="text-xs font-medium text-ink-2">Runway &amp; Ending Cash</dt>
+            <dd
+              className={`money mt-1.5 text-2xl font-bold sm:text-3xl ${
+                forecast.hasReserveBreach ? 'text-blocked' : 'text-ink'
+              }`}
+            >
+              {forecast.hasReserveBreach ? `Day ${forecast.firstBreachDay} Cliff` : '30d Safe'}
+            </dd>
+            <p className="mt-1 text-xs text-ink-2">
+              Ends 30d at{' '}
+              <span className="money font-semibold text-ink">
+                {formatCentsToUSD(forecast.projectedEndingBalanceCents)}
+              </span>{' '}
+              · {openBills.length} open bills ({formatCentsToUSD(openBillsTotal)})
+            </p>
+          </div>
+        </dl>
       </section>
 
-      {/* ---------- 2. The guided demo ---------- */}
+      {/* ---------- 2. Primary Cockpit Workspace: Runway Instrument + Live Queue ---------- */}
       <section
-        aria-labelledby="try-h"
-        className="mx-auto mt-10 grid w-full max-w-6xl gap-6 px-4 pb-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10"
+        aria-label="Runway and live obligations"
+        className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
       >
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 rounded-xl border border-rule bg-panel p-4 shadow-card sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-rule pb-3.5">
             <div>
-              <h2 id="try-h" className="text-xl font-semibold">
-                Try it: 5 steps, about 2 minutes
-              </h2>
-              <p className="mt-1 text-sm text-ink-2">
-                {doneCount === 5
-                  ? 'All done. Restart any time.'
-                  : `${doneCount} of 5 done. Each button calls the real server.`}
+              <h2 className="text-base font-semibold text-ink">30-Day Liquidity Runway</h2>
+              <p className="mt-0.5 text-xs text-ink-2">
+                Deterministic daily balance from scenario baseline{' '}
+                {formatDate(snapshot.demoConfig.asOfDate, { year: true })} (excludes unpaid overdue
+                invoices)
               </p>
             </div>
+            <Link href="/runway" className={btn.small}>
+              Day-by-day forecast
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+
+          <RunwayInstrument
+            className="mt-4"
+            days={forecast.days}
+            floorCents={floor}
+            openingBalanceCents={cleared}
+            minBalanceCents={forecast.minBalanceCents}
+            firstBreachDay={forecast.firstBreachDay}
+            firstBreachDeficitCents={forecast.firstBreachDeficitCents}
+            size="hero"
+            stamp={stamp}
+          />
+
+          <div
+            className={`mt-4 flex flex-col gap-3 rounded-lg border p-3.5 text-xs sm:flex-row sm:items-center sm:justify-between ${
+              forecast.hasReserveBreach
+                ? 'border-blocked/35 bg-blocked-field/50 text-ink'
+                : 'border-safe/35 bg-safe-field/50 text-ink'
+            }`}
+          >
+            <p className="leading-relaxed">
+              {forecast.hasReserveBreach ? (
+                <>
+                  <strong className="font-semibold text-blocked">Guardrail active:</strong> Cash
+                  drops below the {formatCentsToUSD(floor)} safety reserve on Day{' '}
+                  {forecast.firstBreachDay} by −{formatCentsToUSD(deficit)}. Collect overdue
+                  receivables or stage vendor payouts before releasing blocked bills.
+                </>
+              ) : (
+                <>
+                  <strong className="font-semibold text-safe">Liquidity verified:</strong> Cash
+                  stays at least {formatCentsToUSD(safeBuffer)} above the {formatCentsToUSD(floor)}{' '}
+                  safety reserve across all {forecast.days.length} forecast days.
+                </>
+              )}
+            </p>
+            {forecast.hasReserveBreach && (
+              <Link href="/plans" className={`${btn.small} shrink-0`}>
+                Compare recovery plans
+                <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <aside className="min-w-0 flex flex-col gap-4">
+          {/* Operational Bills Queue */}
+          <div className="rounded-xl border border-rule bg-panel p-4 shadow-xs">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-ink">Payables &amp; Reserve Guard</h2>
+              <Link href="/bills" className="text-xs font-medium text-ink-2 hover:text-ink underline">
+                All bills
+              </Link>
+            </div>
+            <ul className="mt-3 divide-y divide-rule">
+              {snapshot.bills.slice(0, 4).map((bill) => {
+                const policy = isOpenBill(bill) ? payoutCheck(snapshot, bill.id) : null;
+                const floorBlocked =
+                  isOpenBill(bill) && bill.status !== 'IN_FLIGHT' && !!policy?.wouldBreach;
+                const walletCheck =
+                  !floorBlocked && isOpenBill(bill) && bill.status !== 'IN_FLIGHT'
+                    ? evaluateBillPayPalBalance({
+                        paypalBalance: snapshot.paypalBalance,
+                        billAmountCents: bill.amountCents,
+                        feeCents: snapshot.demoConfig.paypalPayoutFeeCents,
+                      })
+                    : null;
+                const walletBlocked = walletCheck?.status === 'INSUFFICIENT';
+                const status = floorBlocked
+                  ? { label: `Blocked −${formatCentsToUSD(policy.deficitCents)}`, tone: 'blocked' as const }
+                  : walletBlocked && walletCheck
+                    ? {
+                        label: `PayPal short · ${formatCentsToUSD(walletCheck.shortfallCents)}`,
+                        tone: 'blocked' as const,
+                      }
+                    : billStatus(bill);
+
+                return (
+                  <li key={bill.id} className="py-2.5 first:pt-0 last:pb-0">
+                    <Link
+                      href={`/bills/${bill.id}`}
+                      className="flex items-center justify-between gap-3 rounded-md py-0.5 no-underline transition-colors hover:bg-paper/70"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{bill.vendorName}</p>
+                        <p className="text-xs text-ink-2">
+                          {bill.billNumber} · Due {formatDate(bill.dueDate, { year: false })}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="money text-sm font-semibold text-ink">
+                          {formatCentsToUSD(bill.amountCents)}
+                        </span>
+                        <StatusPill label={status.label} tone={status.tone} />
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* Operational Receivables Queue */}
+          <div className="rounded-xl border border-rule bg-panel p-4 shadow-xs">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-ink">Receivables Queue</h2>
+              <Link href="/invoices" className="text-xs font-medium text-ink-2 hover:text-ink underline">
+                All invoices
+              </Link>
+            </div>
+            <ul className="mt-3 divide-y divide-rule">
+              {snapshot.invoices.slice(0, 3).map((inv) => {
+                const status = invoiceStatus(inv);
+                return (
+                  <li key={inv.id} className="py-2.5 first:pt-0 last:pb-0">
+                    <Link
+                      href={`/invoices/${inv.id}`}
+                      className="flex items-center justify-between gap-3 rounded-md py-0.5 no-underline transition-colors hover:bg-paper/70"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{inv.customerName}</p>
+                        <p className="text-xs text-ink-2">
+                          {inv.invoiceNumber} · Due {formatDate(inv.dueDate, { year: false })}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="money text-sm font-semibold text-ink">
+                          {formatCentsToUSD(inv.amountCents)}
+                        </span>
+                        <StatusPill label={status.label} tone={status.tone} />
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* Compact Guardrail Architecture Strip */}
+          <div className="rounded-xl border border-rule bg-panel p-4 shadow-xs">
+            <p className="text-xs font-semibold uppercase tracking-wider text-ink-2">
+              Guardrail Pipeline
+            </p>
+            <ul className="mt-2.5 space-y-2 text-xs text-ink-2">
+              <li className="flex items-center gap-2">
+                <Bot className="h-3.5 w-3.5 shrink-0 text-focus" aria-hidden="true" />
+                <span>
+                  <strong className="text-ink">AI Suggests:</strong> Plans &amp; reminder copy
+                </span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Scale className="h-3.5 w-3.5 shrink-0 text-safe" aria-hidden="true" />
+                <span>
+                  <strong className="text-ink">Rules Guard:</strong> Deterministic floor &amp; fee
+                  math
+                </span>
+              </li>
+              <li className="flex items-center gap-2">
+                <UserCheck className="h-3.5 w-3.5 shrink-0 text-ink" aria-hidden="true" />
+                <span>
+                  <strong className="text-ink">You Authorize:</strong> Explicit payout approval
+                </span>
+              </li>
+            </ul>
+          </div>
+        </aside>
+      </section>
+
+      {/* ---------- 3. Collapsible Guided Verification Tour (Secondary Dominance) ---------- */}
+      <section
+        aria-labelledby="try-h"
+        className="rounded-xl border border-rule bg-panel/90 shadow-xs"
+      >
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="try-h" className="text-sm font-semibold text-ink">
+                Guided Verification Tour
+              </h2>
+              <span className="rounded-full border border-rule bg-paper px-2.5 py-0.5 text-xs font-medium text-ink-2">
+                {doneCount}/5 verified
+              </span>
+              <span className="text-xs text-ink-2">
+                {doneCount === 5
+                  ? 'All verification checks completed'
+                  : `Next: Step ${naturalStep} (${STEP_META[naturalStep - 1].short})`}
+              </span>
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              {STEP_META.map((item, idx) => {
+                const isDone = done[idx];
+                const isSelected = walkthroughOpen && activeStep === item.n;
+                return (
+                  <button
+                    key={item.n}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStep(item.n);
+                      setWalkthroughOpen(true);
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      isSelected
+                        ? 'border-ink bg-accent text-accent-ink'
+                        : isDone
+                          ? 'border-safe/40 bg-safe-field/50 text-safe hover:bg-safe-field'
+                          : 'border-rule bg-paper text-ink-2 hover:border-rule-strong hover:text-ink'
+                    }`}
+                  >
+                    {isDone ? (
+                      <Check className="h-3 w-3" aria-hidden="true" />
+                    ) : (
+                      <span className="mono">{item.n}.</span>
+                    )}
+                    <span>{item.short}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => void restart()}
               disabled={resetting}
               className={btn.small}
             >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              {resetting ? 'Restarting…' : 'Restart demo'}
+              <RotateCcw className="h-3.5 w-3.5 text-ink-2" aria-hidden="true" />
+              {resetting ? 'Restarting…' : 'Restart'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setWalkthroughOpen((v) => !v)}
+              aria-expanded={walkthroughOpen}
+              className={btn.secondary}
+            >
+              {walkthroughOpen ? 'Collapse walkthrough' : 'Expand walkthrough'}
+              {walkthroughOpen ? (
+                <ChevronUp className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="h-4 w-4" aria-hidden="true" />
+              )}
             </button>
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-rule" aria-hidden="true">
-            <div
-              className="h-full rounded-full bg-safe transition-[width] duration-500"
-              style={{ width: `${(doneCount / 5) * 100}%` }}
-            />
-          </div>
-
-          <ol className="mt-5 space-y-3">
-            <Step n={1} title="See the problem" done={done[0]} current={current === 0}>
-              <p>
-                The business has <Money>{formatCentsToUSD(cleared)}</Money> and wants to keep at
-                least <Money>{formatCentsToUSD(floor)}</Money> as a safety reserve. On{' '}
-                {acme ? formatDate(acme.dueDate) : 'Day 10'}, a <Money>{acmeAmount}</Money> bill
-                from Acme Supplies would take cash below that line. That&apos;s the red bar in the
-                chart.
-              </p>
-              {current === 0 && (
-                <button type="button" onClick={() => setSeen(true)} className={`${btn.primary} mt-3`}>
-                  Got it, next step
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </button>
-              )}
-            </Step>
-
-            <Step n={2} title="Ask the AI for a plan" done={done[1]} current={current === 1}>
-              <p>
-                The AI writes three plans. Then plain code replays each one on the forecast and
-                decides whether it is safe. The AI never does the arithmetic.
-              </p>
-              {current === 1 && (
-                <ActionButton onClick={askAi} busy={busy === 2} busyLabel="The AI is writing plans (free models take 10–50s)…">
-                  <Bot className="h-4 w-4" aria-hidden="true" />
-                  Ask the AI
-                </ActionButton>
-              )}
-              {proposals && (
-                <div className="mt-3 overflow-hidden rounded-md border border-rule bg-paper">
-                  <p className="border-b border-rule px-3 py-2 text-xs text-ink-2">
-                    {aiLive ? (
-                      <>
-                        Written live by <span className="mono">{proposals.model}</span>
-                      </>
-                    ) : (
-                      <>AI unavailable, so built-in templates were used</>
-                    )}{' '}
-                    · {passing} of {proposals.plans.length} pass the rules
-                  </p>
-                  <ul>
-                    {proposals.plans.map((plan) => (
-                      <li key={plan.id} className="border-t border-rule px-3 py-2 first:border-t-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <span className="text-sm font-medium text-ink">{plan.title}</span>
-                          <Verdict ok={plan.verdict === 'ACCEPTED'} />
-                        </div>
-                        <p className="mt-0.5 text-xs text-ink-2">
-                          Lowest balance {formatCentsToUSD(plan.minProjectedBalanceCents)}
-                          {plan.verdict !== 'ACCEPTED' && plan.rulesFailed[0]
-                            ? ` · ${plan.rulesFailed[0].replace(/^RULE_[A-Z_]+:\s*/, '')}`
-                            : ''}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link href="/plans" className="block border-t border-rule px-3 py-2 text-xs text-ink-2 hover:text-ink">
-                    See every rule each plan was checked against →
-                  </Link>
-                </div>
-              )}
-              <StepError error={error} step={2} />
-            </Step>
-
-            <Step n={3} title="Try to pay the bill anyway" done={done[2]} current={current === 2}>
-              <p>
-                Pretend you ignore the warning and pay Acme&apos;s <Money>{acmeAmount}</Money>{' '}
-                today. The server runs the safety check itself, so a button can&apos;t skip it.
-              </p>
-              {current === 2 && (
-                <ActionButton onClick={tryPayAcme} busy={busy === 3} busyLabel="Checking…">
-                  <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-                  Pay Acme {acmeAmount} now
-                </ActionButton>
-              )}
-              {blocked && (
-                <div className="mt-3 rounded-md border-2 border-blocked bg-blocked-field p-3">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-blocked">
-                    <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-                    Refused: {formatCentsToUSD(blocked.deficitCents)} short of the reserve
-                  </p>
-                  <p className="mt-1 text-xs text-ink-2">
-                    The server said no (HTTP 403). PayPal&apos;s payout fee is counted too, so the
-                    fee can never be what breaks the reserve. No money moved.
-                  </p>
-                </div>
-              )}
-              <StepError error={error} step={3} />
-            </Step>
-
-            <Step n={4} title="Collect the overdue invoice" done={done[3]} current={current === 3}>
-              <p>
-                Apex Corp owes <Money>{apexAmount}</Money>
-                {apex && apex.daysOverdue > 0 ? ` and is ${apex.daysOverdue} days late` : ''}. In
-                real use you&apos;d send an AI-drafted
-                reminder (see{' '}
-                <Link href="/invoices/inv-apex-01" className="underline">
-                  the invoice
-                </Link>
-                ). Here, mark it as paid.
-              </p>
-              {current === 3 && (
-                <ActionButton onClick={collectApex} busy={busy === 4} busyLabel="Collecting…">
-                  <Check className="h-4 w-4" aria-hidden="true" />
-                  Mark {apexAmount} as received
-                </ActionButton>
-              )}
-              {apexPaid && (
-                <p className="mt-3 rounded-md border border-safe/40 bg-safe-field p-3 text-sm text-ink">
-                  Cash is now <Money>{formatCentsToUSD(cleared)}</Money>. The chart turned green.
-                  The lowest point is <Money>{formatCentsToUSD(forecast.minBalanceCents)}</Money>,
-                  above the reserve.
-                </p>
-              )}
-              <StepError error={error} step={4} />
-            </Step>
-
-            <Step n={5} title="Pay the bill again" done={done[4]} current={current === 4}>
-              <p>
-                Same button, same check. This time it passes
-                {check && !check.wouldBreach && !acmePaid
-                  ? `, with ${formatCentsToUSD(check.bufferCents)} to spare`
-                  : ''}
-                .
-              </p>
-              {current === 4 && (
-                <ActionButton onClick={payAcme} busy={busy === 5} busyLabel="Approving…">
-                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                  Approve Acme {acmeAmount}
-                </ActionButton>
-              )}
-              {acmePaid && (
-                <p className="mt-3 rounded-md border border-safe/40 bg-safe-field p-3 text-sm text-ink">
-                  Approved and paid. Every step you took, including the refused payment, is
-                  recorded in the{' '}
-                  <Link href="/ledger" className="font-medium underline">
-                    audit log
-                  </Link>
-                  .
-                </p>
-              )}
-              <StepError error={error} step={5} />
-            </Step>
-          </ol>
-
-          {current === -1 && (
-            <div className="mt-5 rounded-lg border border-rule bg-panel p-4">
-              <p className="text-sm font-medium text-ink">Want proof it can&apos;t be tricked?</p>
-              <p className="mt-1 text-sm text-ink-2">
-                12 attacks (fake instructions hidden in an invoice, a hidden fee, a double click…)
-                run against the real safety code.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link href="/bench" className={btn.primary}>
-                  Run the 12 safety tests
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
-                <Link href="/ledger" className={btn.secondary}>
-                  Open the audit log
-                </Link>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* The chart stays in view while the steps scroll. */}
-        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
-          <div className="rounded-lg border border-rule bg-panel p-4 sm:p-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-medium">Cash over the next 30 days</h2>
-              <span className="text-xs text-ink-3">from {formatDate(snapshot.demoConfig.asOfDate)}</span>
-            </div>
-            <RunwayInstrument
-              className="mt-4"
-              days={forecast.days}
-              floorCents={floor}
-              openingBalanceCents={cleared}
-              minBalanceCents={forecast.minBalanceCents}
-              firstBreachDay={forecast.firstBreachDay}
-              firstBreachDeficitCents={forecast.firstBreachDeficitCents}
-              stamp={stamp}
-            />
-            <dl className="mt-4 grid grid-cols-3 divide-x divide-rule border-t border-rule pt-3">
-              <Readout label="Cash today" value={formatCentsToUSD(cleared)} />
-              <Readout label="Safety reserve" value={formatCentsToUSD(floor)} />
-              <Readout
-                label="Lowest point"
-                value={formatCentsToUSD(forecast.minBalanceCents)}
-                tone={forecast.hasReserveBreach ? 'blocked' : 'safe'}
-              />
-            </dl>
-            <p
-              className={`mt-3 rounded-md px-3 py-2 text-sm font-medium ${
-                forecast.hasReserveBreach ? 'bg-blocked-field text-blocked' : 'bg-safe-field text-safe'
-              }`}
-            >
-              {forecast.hasReserveBreach
-                ? `Cash drops below the reserve on Day ${forecast.firstBreachDay}.`
-                : 'Cash stays above the reserve for all 30 days.'}
-            </p>
+        <div className="h-1 w-full bg-rule/70" aria-hidden="true">
+          <div
+            className="h-full bg-safe transition-[width] duration-500"
+            style={{ width: `${(doneCount / 5) * 100}%` }}
+          />
+        </div>
+
+        {walkthroughOpen && (
+          <div className="border-t border-rule p-4 sm:p-5">
+            {activeStep === 1 && (
+              <StepPanel
+                n={1}
+                title={STEP_META[0].title}
+                done={done[0]}
+                onNext={() => setSelectedStep(2)}
+              >
+                <p>
+                  Start with <Money>{formatCentsToUSD(cleared)}</Money> cleared cash and a strict{' '}
+                  <Money>{formatCentsToUSD(floor)}</Money> reserve floor. On{' '}
+                  {acme ? formatDate(acme.dueDate) : 'Day 10'}, Acme Supplies&apos;{' '}
+                  <Money>{acmeAmount}</Money> bill drops projected cash below the floor on the
+                  cockpit runway chart above.
+                </p>
+                {!done[0] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSeen(true);
+                      setSelectedStep(2);
+                    }}
+                    className={`${btn.primary} mt-3`}
+                  >
+                    Mark Step 1 reviewed &amp; continue
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                )}
+              </StepPanel>
+            )}
+
+            {activeStep === 2 && (
+              <StepPanel
+                n={2}
+                title={STEP_META[1].title}
+                done={done[1]}
+                onPrev={() => setSelectedStep(1)}
+                onNext={() => setSelectedStep(3)}
+              >
+                <p>
+                  Generate candidate recovery plans and let deterministic server rules evaluate each
+                  strategy against the reserve floor in integer cents.
+                </p>
+                <ActionButton
+                  onClick={askAi}
+                  busy={busy === 2}
+                  busyLabel="Evaluating candidate plans…"
+                >
+                  <Bot className="h-4 w-4" aria-hidden="true" />
+                  {proposals ? 'Regenerate AI Plans' : 'Generate AI Plans'}
+                </ActionButton>
+                {proposals && (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-rule bg-paper">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-3.5 py-2 text-xs font-medium text-ink-2">
+                      <span>
+                        {aiLive ? 'AI Copilot Proposal' : 'Deterministic Policy Templates'}
+                      </span>
+                      <span className="rounded-full bg-safe-field px-2 py-0.5 font-semibold text-safe">
+                        {passing} of {proposals.plans.length} plans pass rules
+                      </span>
+                    </div>
+                    <ul className="divide-y divide-rule">
+                      {proposals.plans.map((plan) => (
+                        <li key={plan.id} className="p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="text-sm font-semibold text-ink">{plan.title}</span>
+                            <Verdict ok={plan.verdict === 'ACCEPTED'} />
+                          </div>
+                          <p className="mt-1 text-xs text-ink-2">
+                            Min projected balance:{' '}
+                            <span className="money font-semibold text-ink">
+                              {formatCentsToUSD(plan.minProjectedBalanceCents)}
+                            </span>
+                            {plan.verdict !== 'ACCEPTED' && plan.rulesFailed[0]
+                              ? ` · ${plan.rulesFailed[0].replace(/^RULE_[A-Z_]+:\s*/, '')}`
+                              : ''}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      href="/plans"
+                      className="block border-t border-rule px-3.5 py-2 text-xs font-medium text-focus hover:underline"
+                    >
+                      Open full side-by-side plan comparison →
+                    </Link>
+                  </div>
+                )}
+                <StepError error={error} step={2} />
+              </StepPanel>
+            )}
+
+            {activeStep === 3 && (
+              <StepPanel
+                n={3}
+                title={STEP_META[2].title}
+                done={done[2]}
+                onPrev={() => setSelectedStep(2)}
+                onNext={() => setSelectedStep(4)}
+              >
+                <p>
+                  Attempt to disburse Acme&apos;s <Money>{acmeAmount}</Money> bill before collecting
+                  overdue cash. Server policy runs fee-inclusive reserve verification before touching
+                  PayPal.
+                </p>
+                {!acmePaid && (
+                  <ActionButton
+                    onClick={tryPayAcme}
+                    busy={busy === 3}
+                    busyLabel="Running server policy check…"
+                  >
+                    <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                    Try paying Acme {acmeAmount} now
+                  </ActionButton>
+                )}
+                {blocked && (
+                  <div className="mt-4 rounded-xl border border-blocked/40 bg-blocked-field/60 p-3.5">
+                    <p className="flex items-center gap-2 text-sm font-bold text-blocked">
+                      <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Blocked by Guardrail: {formatCentsToUSD(blocked.deficitCents)} short of
+                      reserve
+                    </p>
+                    <p className="mt-1.5 text-xs leading-relaxed text-ink-2">
+                      Server returned HTTP 403 (RESERVE_BREACH_BLOCKED). PayPal payout fees are
+                      included in the floor check. Zero funds were disbursed.
+                    </p>
+                  </div>
+                )}
+                <StepError error={error} step={3} />
+              </StepPanel>
+            )}
+
+            {activeStep === 4 && (
+              <StepPanel
+                n={4}
+                title={STEP_META[3].title}
+                done={done[3]}
+                onPrev={() => setSelectedStep(3)}
+                onNext={() => setSelectedStep(5)}
+              >
+                <p>
+                  Apex Corp owes <Money>{apexAmount}</Money>
+                  {apex && apex.daysOverdue > 0 ? ` (${apex.daysOverdue} days overdue)` : ''}.
+                  Simulate collecting this invoice to replenish cleared liquidity.
+                </p>
+                {!apexPaid && (
+                  <ActionButton
+                    onClick={collectApex}
+                    busy={busy === 4}
+                    busyLabel="Recording invoice collection…"
+                  >
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    Mark {apexAmount} as collected
+                  </ActionButton>
+                )}
+                {apexPaid && (
+                  <div className="mt-4 rounded-xl border border-safe/40 bg-safe-field/60 p-3.5 text-sm text-ink">
+                    <p className="font-semibold text-safe">
+                      Cleared cash replenished to <Money>{formatCentsToUSD(cleared)}</Money>
+                    </p>
+                    <p className="mt-1 text-xs text-ink-2">
+                      Lowest projected balance is now{' '}
+                      <Money>{formatCentsToUSD(forecast.minBalanceCents)}</Money>, above the safety
+                      floor.
+                    </p>
+                  </div>
+                )}
+                <StepError error={error} step={4} />
+              </StepPanel>
+            )}
+
+            {activeStep === 5 && (
+              <StepPanel
+                n={5}
+                title={STEP_META[4].title}
+                done={done[4]}
+                onPrev={() => setSelectedStep(4)}
+              >
+                <p>
+                  With liquidity replenished, approve Acme&apos;s <Money>{acmeAmount}</Money>{' '}
+                  payout. The deterministic policy engine confirms the transaction
+                  {check && !check.wouldBreach && !acmePaid && !acmeFailed
+                    ? ` leaves a ${formatCentsToUSD(check.bufferCents)} buffer above reserve`
+                    : ''}
+                  .
+                </p>
+                {!acmePaid && !acmeFailed && (
+                  <ActionButton
+                    onClick={payAcme}
+                    busy={busy === 5}
+                    busyLabel="Authorizing payout…"
+                  >
+                    <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                    Approve Acme {acmeAmount} payout
+                  </ActionButton>
+                )}
+                {acmeFailed && (
+                  <div className="mt-4 space-y-3 rounded-xl border border-blocked/45 bg-blocked-field/60 p-3.5 text-sm text-ink">
+                    <p className="font-semibold text-blocked">
+                      Payout Blocked or Failed at PayPal (Zero Ledger Debit)
+                    </p>
+                    <p className="text-xs text-ink-2">
+                      Acme&apos;s payout is marked failed so no duplicate payout can be submitted and
+                      your internal cleared cash was not debited. Inspect the{' '}
+                      <Link href="/bills/bill-acme-01" className="font-semibold text-ink underline hover:text-blocked">
+                        Acme bill room
+                      </Link>{' '}
+                      or restart the guided flow to reset demo state.
+                    </p>
+                    <ActionButton onClick={restart} busy={resetting} busyLabel="Resetting demo…">
+                      Reset Demo to Retry
+                    </ActionButton>
+                  </div>
+                )}
+                {acmePaid && (
+                  <div className="mt-4 rounded-xl border border-safe/40 bg-safe-field/60 p-3.5 text-sm text-ink">
+                    <p className="font-semibold text-safe">
+                      {acmeInFlight
+                        ? 'Payout Authorized · In Flight at PayPal'
+                        : 'Payout Authorized & Recorded'}
+                    </p>
+                    <p className="mt-1 text-xs text-ink-2">
+                      Every decision and settlement outcome is permanently logged in the{' '}
+                      <Link href="/ledger" className="font-semibold text-ink underline hover:text-safe">
+                        immutable audit log
+                      </Link>
+                      .
+                    </p>
+                  </div>
+                )}
+                <StepError error={error} step={5} />
+              </StepPanel>
+            )}
           </div>
-          <p className="mt-2 text-xs text-ink-3">
-            The dashed line is the safety reserve. Every number is computed by code in whole cents.
-          </p>
-        </aside>
+        )}
       </section>
-    </>
+    </div>
   );
 }
 
-function Step({
+function StepPanel({
   n,
   title,
   done,
-  current,
+  onPrev,
+  onNext,
   children,
 }: {
   n: number;
   title: string;
   done: boolean;
-  current: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <li
-      aria-current={current ? 'step' : undefined}
-      className={`rounded-lg border p-4 transition-colors ${
-        current
-          ? 'border-ink bg-panel shadow-sm'
-          : done
-            ? 'border-rule bg-panel'
-            : 'border-rule opacity-60'
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span
-          className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-semibold ${
-            done
-              ? 'bg-safe text-paper'
-              : current
-                ? 'bg-ink text-paper'
-                : 'text-ink-3 ring-1 ring-inset ring-rule-strong'
-          }`}
-          aria-hidden="true"
-        >
-          {done ? <Check className="h-4 w-4" strokeWidth={3} /> : n}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-ink">
-            <span className="sr-only">Step {n}{done ? ', done' : ''}: </span>
-            {title}
-          </h3>
-          <div className="mt-1 text-sm leading-relaxed text-ink-2">{children}</div>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${
+              done ? 'bg-safe text-paper' : 'bg-accent text-accent-ink'
+            }`}
+          >
+            {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : n}
+          </span>
+          <h3 className="text-sm font-bold text-ink">{title}</h3>
+          <StatusPill label={done ? 'Verified' : 'Pending action'} tone={done ? 'safe' : 'neutral'} />
+        </div>
+        <div className="flex items-center gap-1.5">
+          {onPrev && (
+            <button type="button" onClick={onPrev} className={btn.small}>
+              Prev
+            </button>
+          )}
+          {onNext && (
+            <button type="button" onClick={onNext} className={btn.small}>
+              Next
+            </button>
+          )}
         </div>
       </div>
-    </li>
+      <div className="text-sm leading-relaxed text-ink-2">{children}</div>
+    </div>
   );
 }
 
@@ -507,34 +917,16 @@ function Verdict({ ok }: { ok: boolean }) {
   return ok ? (
     <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-safe">
       <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-      Safe
+      Rules Pass
     </span>
   ) : (
     <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blocked">
       <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
-      Refused
+      Blocked
     </span>
   );
 }
 
 function Money({ children }: { children: React.ReactNode }) {
   return <strong className="money font-semibold text-ink">{children}</strong>;
-}
-
-function Readout({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: string;
-  tone?: 'default' | 'safe' | 'blocked';
-}) {
-  const toneClass = tone === 'safe' ? 'text-safe' : tone === 'blocked' ? 'text-blocked' : 'text-ink';
-  return (
-    <div className="px-3 first:pl-0 last:pr-0">
-      <dt className="text-xs text-ink-3">{label}</dt>
-      <dd className={`money mt-0.5 text-base font-semibold ${toneClass}`}>{value}</dd>
-    </div>
-  );
 }

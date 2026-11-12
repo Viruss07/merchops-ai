@@ -8,6 +8,7 @@ import { RunwayCard } from '@/components/runway/RunwayCard';
 import { Figure, Page, PageHeader, Section, StatusPill, btn } from '@/components/ui/kit';
 import { formatCentsToUSD } from '@/lib/money';
 import { dayOnRunway, formatDate, isOpenBill } from '@/lib/client/states';
+import { findLowestBalancePoint } from '@/lib/runway';
 import type { RunwayForecast, StateSnapshot } from '@/types';
 
 type Landing = {
@@ -62,7 +63,13 @@ function landings(snapshot: StateSnapshot): Landing[] {
 
 function Verdict({ snapshot, forecast }: { snapshot: StateSnapshot; forecast: RunwayForecast }) {
   const deficit = forecast.firstBreachDeficitCents ?? forecast.breachDeficitCents ?? 0;
-  const breachBill = snapshot.bills.find((b) => isOpenBill(b) && b.dueDate === forecast.breachDate);
+  const breachBill = snapshot.bills.find(
+    (b) =>
+      isOpenBill(b) &&
+      (forecast.firstBreachDay === 1
+        ? dayOnRunway(snapshot.demoConfig.asOfDate, b.dueDate) <= 1
+        : b.dueDate === forecast.breachDate),
+  );
   const overdue = snapshot.invoices.filter((i) => i.status === 'OVERDUE');
   const overdueTotal = overdue.reduce((sum, i) => sum + i.amountCents, 0);
 
@@ -152,59 +159,99 @@ function DayTable({ forecast, floorCents }: { forecast: RunwayForecast; floorCen
         </button>
       }
     >
-      <div className="-mx-4 overflow-x-auto sm:mx-0">
-        <table className="w-full min-w-[34rem] text-sm">
-          <thead>
-            <tr className="border-b border-rule text-left text-xs text-ink-3">
-              <th scope="col" className="py-2 pl-4 pr-3 font-normal sm:pl-0">
-                Day
-              </th>
-              <th scope="col" className="py-2 pr-3 font-normal">
-                What lands
-              </th>
-              <th scope="col" className="py-2 pr-3 text-right font-normal">
-                In
-              </th>
-              <th scope="col" className="py-2 pr-3 text-right font-normal">
-                Out
-              </th>
-              <th scope="col" className="py-2 pr-4 text-right font-normal sm:pr-0">
-                Balance
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((day) => {
-              const below = day.endingBalanceCents < floorCents;
-              return (
-                <tr
-                  key={day.dayNumber}
-                  className={`border-b border-rule last:border-0 ${below ? 'bg-blocked-field/40' : ''}`}
-                >
-                  <td className="whitespace-nowrap py-2 pl-4 pr-3 sm:pl-0">
-                    <span className="font-medium">Day {day.dayNumber}</span>
-                    <span className="block text-xs text-ink-3">
-                      {formatDate(day.date, { year: false })}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 text-xs text-ink-2">{day.notes ?? '—'}</td>
-                  <td className="money whitespace-nowrap py-2 pr-3 text-right text-safe">
-                    {day.inflowCents ? `+${formatCentsToUSD(day.inflowCents)}` : ''}
-                  </td>
-                  <td className="money whitespace-nowrap py-2 pr-3 text-right text-ink">
-                    {day.outflowCents ? `−${formatCentsToUSD(day.outflowCents)}` : ''}
-                  </td>
-                  <td
-                    className={`money whitespace-nowrap py-2 pr-4 text-right font-semibold sm:pr-0 ${below ? 'text-blocked' : 'text-ink'}`}
-                  >
-                    {formatCentsToUSD(day.endingBalanceCents)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                <div className="space-y-2 sm:hidden">
+                  {rows.map((day) => {
+                    const below = day.endingBalanceCents < floorCents;
+                    return (
+                      <div
+                        key={day.dayNumber}
+                        className={`rounded-lg border px-3 py-2.5 text-sm ${
+                          below ? 'border-blocked/40 bg-blocked-field/40' : 'border-rule bg-paper'
+                        }`}
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="font-medium text-ink">
+                            Day {day.dayNumber}{' '}
+                            <span className="text-xs font-normal text-ink-2">
+                              ({formatDate(day.date, { year: false })})
+                            </span>
+                          </span>
+                          <span
+                            className={`money font-semibold ${below ? 'text-blocked' : 'text-ink'}`}
+                          >
+                            {formatCentsToUSD(day.endingBalanceCents)}
+                          </span>
+                        </div>
+                        {day.notes && (
+                          <p className="mt-1 text-xs leading-relaxed text-ink-2">{day.notes}</p>
+                        )}
+                        {(day.inflowCents > 0 || day.outflowCents > 0) && (
+                          <div className="money mt-1.5 flex flex-wrap gap-3 text-xs">
+                            {day.inflowCents > 0 && (
+                              <span className="text-safe">+{formatCentsToUSD(day.inflowCents)} in</span>
+                            )}
+                            {day.outflowCents > 0 && (
+                              <span className="text-ink-2">−{formatCentsToUSD(day.outflowCents)} out</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-rule text-left text-xs text-ink-2">
+                        <th scope="col" className="py-2 pr-3 font-medium">
+                          Day
+                        </th>
+                        <th scope="col" className="py-2 pr-3 font-medium">
+                          What lands
+                        </th>
+                        <th scope="col" className="py-2 pr-3 text-right font-medium">
+                          In
+                        </th>
+                        <th scope="col" className="py-2 pr-3 text-right font-medium">
+                          Out
+                        </th>
+                        <th scope="col" className="py-2 text-right font-medium">
+                          Balance
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((day) => {
+                        const below = day.endingBalanceCents < floorCents;
+                        return (
+                          <tr
+                            key={day.dayNumber}
+                            className={`border-b border-rule last:border-0 ${below ? 'bg-blocked-field/40' : ''}`}
+                          >
+                            <td className="whitespace-nowrap py-2.5 pr-3">
+                              <span className="font-medium text-ink">Day {day.dayNumber}</span>
+                              <span className="block text-xs text-ink-2">
+                                {formatDate(day.date, { year: false })}
+                              </span>
+                            </td>
+                            <td className="py-2.5 pr-3 text-xs text-ink-2">{day.notes ?? '—'}</td>
+                            <td className="money whitespace-nowrap py-2.5 pr-3 text-right text-safe">
+                              {day.inflowCents ? `+${formatCentsToUSD(day.inflowCents)}` : ''}
+                            </td>
+                            <td className="money whitespace-nowrap py-2.5 pr-3 text-right text-ink">
+                              {day.outflowCents ? `−${formatCentsToUSD(day.outflowCents)}` : ''}
+                            </td>
+                            <td
+                              className={`money whitespace-nowrap py-2.5 text-right font-semibold ${below ? 'text-blocked' : 'text-ink'}`}
+                            >
+                              {formatCentsToUSD(day.endingBalanceCents)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
     </Section>
   );
 }
@@ -215,6 +262,7 @@ export default function RunwayPage() {
       {({ snapshot, forecast }) => {
         const floor = snapshot.account.minReserveCents;
         const rows = landings(snapshot);
+        const lowestPoint = findLowestBalancePoint(forecast);
         return (
           <Page>
             <PageHeader
@@ -230,7 +278,8 @@ export default function RunwayPage() {
                     tone={forecast.hasReserveBreach ? 'blocked' : 'safe'}
                   />
                   <span>
-                    Next {forecast.days.length} days from {formatDate(snapshot.demoConfig.asOfDate)}
+                    Scenario baseline: {formatDate(snapshot.demoConfig.asOfDate, { year: true })} ·{' '}
+                    {forecast.days.length}-day deterministic window
                   </span>
                 </>
               }
@@ -241,6 +290,49 @@ export default function RunwayPage() {
                 />
               }
             />
+
+            <dl className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="rounded-lg border border-rule bg-panel p-3.5">
+                <dt className="text-xs text-ink-2">Cleared cash</dt>
+                <dd className="money mt-1 text-lg font-semibold text-ink">
+                  {formatCentsToUSD(snapshot.account.clearedBalanceCents)}
+                </dd>
+              </div>
+              <div className="rounded-lg border border-rule bg-panel p-3.5">
+                <dt className="text-xs text-ink-2">Safety reserve floor</dt>
+                <dd className="money mt-1 text-lg font-semibold text-ink">
+                  {formatCentsToUSD(floor)}
+                </dd>
+              </div>
+              <div
+                className={`rounded-lg border p-3.5 ${
+                  forecast.hasReserveBreach
+                    ? 'border-blocked/40 bg-blocked-field/40'
+                    : 'border-safe/40 bg-safe-field/40'
+                }`}
+              >
+                <dt className="text-xs text-ink-2">
+                  Lowest projected ({lowestPoint.isOpening ? 'Today' : `Day ${lowestPoint.dayNumber}`})
+                </dt>
+                <dd
+                  className={`money mt-1 text-lg font-semibold ${
+                    forecast.hasReserveBreach ? 'text-blocked' : 'text-safe'
+                  }`}
+                >
+                  {formatCentsToUSD(forecast.minBalanceCents)}
+                </dd>
+              </div>
+              <div className="rounded-lg border border-rule bg-panel p-3.5">
+                <dt className="text-xs text-ink-2">Runway status</dt>
+                <dd
+                  className={`mt-1 text-lg font-semibold ${
+                    forecast.hasReserveBreach ? 'text-blocked' : 'text-safe'
+                  }`}
+                >
+                  {forecast.hasReserveBreach ? `Breach · Day ${forecast.firstBreachDay}` : '30d Protected'}
+                </dd>
+              </div>
+            </dl>
 
             <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
               <div className="min-w-0 space-y-5">

@@ -8,7 +8,7 @@
  */
 
 import { CurrencyCents, Invoice, Bill, RunwayDay, RunwayForecast } from '@/types';
-import { addCents, subtractCents } from '@/lib/money';
+import { addCents } from '@/lib/money';
 import { DEFAULT_FORECAST_DAYS, DEMO_AS_OF } from '@/lib/config';
 
 export interface RunwayOptions {
@@ -167,7 +167,11 @@ export function calculateRunway(options: RunwayOptions): RunwayForecast {
     });
 
     // Balance(d) = Balance(d-1) + Inflows(d) - Outflows(d)
-    const endingBalance = subtractCents(addCents(startingBalance, inflowForDay), outflowForDay);
+    // Use signed integer math here so cash shortfalls below $0 remain representable in projections.
+    const endingBalance = startingBalance + inflowForDay - outflowForDay;
+    if (!Number.isSafeInteger(endingBalance)) {
+      throw new RangeError('Projected balance out of safe integer range');
+    }
     runningBalance = endingBalance;
 
     const breachesReserve = endingBalance < minReserveCents;
@@ -177,7 +181,7 @@ export function calculateRunway(options: RunwayOptions): RunwayForecast {
         firstBreachDay = dayIndex;
         breachDate = dateStr;
       }
-      const deficit = subtractCents(minReserveCents, endingBalance);
+      const deficit = minReserveCents - endingBalance;
       if (deficit > maxDeficitCents) {
         maxDeficitCents = deficit;
       }
@@ -227,5 +231,40 @@ export function calculateRunway(options: RunwayOptions): RunwayForecast {
     breachDeficitCents: maxDeficitCents,
     minBalanceCents,
     firstBreachDeficitCents,
+  };
+}
+
+/**
+ * Returns the forecast day index (or opening day 0) where `minBalanceCents` first occurs.
+ * Prevents UI readouts and bar markers from conflating `firstBreachDay` with the deepest low.
+ */
+export function findLowestBalancePoint(
+  forecast: Pick<RunwayForecast, 'days' | 'minBalanceCents' | 'currentBalanceCents'>
+): { dayNumber: number; isOpening: boolean; dayIndex: number } {
+  if (forecast.days.length === 0) {
+    return { dayNumber: 0, isOpening: true, dayIndex: -1 };
+  }
+  const matchIdx = forecast.days.findIndex(
+    (day) => day.endingBalanceCents === forecast.minBalanceCents
+  );
+  if (forecast.currentBalanceCents <= forecast.minBalanceCents && matchIdx === -1) {
+    return { dayNumber: 0, isOpening: true, dayIndex: -1 };
+  }
+  if (matchIdx >= 0 && forecast.currentBalanceCents > forecast.minBalanceCents) {
+    return { dayNumber: forecast.days[matchIdx].dayNumber, isOpening: false, dayIndex: matchIdx };
+  }
+  if (forecast.currentBalanceCents === forecast.minBalanceCents) {
+    return { dayNumber: 0, isOpening: true, dayIndex: -1 };
+  }
+  let lowestIdx = 0;
+  for (let i = 1; i < forecast.days.length; i += 1) {
+    if (forecast.days[i].endingBalanceCents < forecast.days[lowestIdx].endingBalanceCents) {
+      lowestIdx = i;
+    }
+  }
+  return {
+    dayNumber: forecast.days[lowestIdx].dayNumber,
+    isOpening: false,
+    dayIndex: lowestIdx,
   };
 }

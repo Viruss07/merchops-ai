@@ -24,12 +24,16 @@ import {
 import {
   ApiError,
   createPayPalInvoice,
-  getErrorMessage,
   recordPayPalPayment,
   simulatePayment,
   syncInvoices,
 } from '@/lib/apiClient';
 import { formatCentsToUSD } from '@/lib/money';
+import {
+  formatInvoiceActionErrorNotice,
+  formatInvoiceSyncNotice,
+  type InvoiceCheckNotice,
+} from '@/lib/client/invoiceSyncFeedback';
 import {
   INVOICE_STEPS,
   eventsFor,
@@ -49,33 +53,43 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
   const { setSnapshot } = useAppState();
   const [busy, setBusy] = useState<Busy>(null);
   const [composing, setComposing] = useState(false);
-  const [notice, setNotice] = useState<{ title: string; text: string; hint?: string } | null>(null);
+  const [notice, setNotice] = useState<InvoiceCheckNotice | null>(null);
   const sandbox = snapshot.capabilities.paypalSandboxEnabled;
 
-  const run = async (
+  const run = async <T extends { snapshot: StateSnapshot }>(
     kind: Exclude<Busy, null>,
-    fn: () => Promise<{ snapshot: StateSnapshot }>,
+    fn: () => Promise<T>,
     failTitle: string,
+    onSuccess?: (res: T) => InvoiceCheckNotice | null,
   ) => {
     setBusy(kind);
     setNotice(null);
     try {
       const res = await fn();
-      setSnapshot(res.snapshot);
+      if (res?.snapshot) setSnapshot(res.snapshot);
+      if (onSuccess) {
+        setNotice(onSuccess(res));
+      }
     } catch (caught) {
       if (caught instanceof ApiError && caught.snapshot) setSnapshot(caught.snapshot);
-      setNotice({
-        title: failTitle,
-        text: getErrorMessage(caught),
-        hint:
-          caught instanceof ApiError && caught.status === 403
-            ? 'The PayPal sandbox app needs the Invoicing permission: developer.paypal.com → Apps & Credentials → your app → tick Invoicing → Save. Until then, mark it paid in simulation.'
-            : undefined,
-      });
+      setNotice(
+        formatInvoiceActionErrorNotice(failTitle, caught, {
+          allowRetry: kind === 'sync',
+          status: caught instanceof ApiError ? caught.status : undefined,
+        }),
+      );
     } finally {
       setBusy(null);
     }
   };
+
+  const checkPayPal = () =>
+    run(
+      'sync',
+      () => syncInvoices(invoice.id),
+      'PayPal could not be checked',
+      (res) => formatInvoiceSyncNotice(res),
+    );
 
   if (invoice.status === 'PAID') {
     return (
@@ -91,6 +105,14 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
           {formatCentsToUSD(invoice.amountCents)} from {invoice.customerName} is in cleared cash.
           The runway counts it today, and any bill it unblocked can now be paid.
         </p>
+        {notice && (
+          <div className="mt-4">
+            <Notice tone={notice.tone} title={notice.title} onDismiss={() => setNotice(null)}>
+              <p>{notice.text}</p>
+              {notice.hint && <p className="mt-2 text-xs">{notice.hint}</p>}
+            </Notice>
+          </div>
+        )}
         <Link href="/bills" className={`${btn.secondary} mt-4`}>
           See which bills it unblocked
         </Link>
@@ -201,9 +223,7 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
                 <button
                   type="button"
                   disabled={busy !== null}
-                  onClick={() =>
-                    run('sync', () => syncInvoices(invoice.id), 'PayPal could not be checked')
-                  }
+                  onClick={checkPayPal}
                   className={btn.secondary}
                 >
                   <RefreshCw
@@ -249,15 +269,31 @@ function NextStep({ invoice, snapshot }: { invoice: Invoice; snapshot: StateSnap
       )}
 
       {!sandbox && !invoice.paypalInvoiceId && !composing && (
-        <p className="mt-3 text-xs text-ink-3">
-          PayPal sandbox isn&apos;t configured on this server, so invoices stay local. See
-          docs/SANDBOX_GUIDE.md.
+        <p className="mt-3 text-xs text-ink-2">
+          PayPal sandbox mode is not enabled in this environment, so invoices stay in local demo
+          mode.
         </p>
       )}
 
       {notice && (
         <div className="mt-4">
-          <Notice title={notice.title} onDismiss={() => setNotice(null)}>
+          <Notice
+            tone={notice.tone}
+            title={notice.title}
+            onDismiss={() => setNotice(null)}
+            action={
+              notice.canRetry ? (
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={checkPayPal}
+                  className={btn.small}
+                >
+                  Retry check
+                </button>
+              ) : undefined
+            }
+          >
             <p>{notice.text}</p>
             {notice.hint && <p className="mt-2 text-xs">{notice.hint}</p>}
           </Notice>

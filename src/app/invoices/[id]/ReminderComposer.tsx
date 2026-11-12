@@ -22,8 +22,7 @@ export function ReminderComposer({ invoice, onDone }: { invoice: Invoice; onDone
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [source, setSource] = useState<ReminderSource | null>(null);
-  const [model, setModel] = useState('');
-  const [notice, setNotice] = useState<string | undefined>();
+  const [hasNotice, setHasNotice] = useState(false);
   const [drafting, setDrafting] = useState(true);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -42,8 +41,7 @@ export function ReminderComposer({ invoice, onDone }: { invoice: Invoice; onDone
       setSubject(data.subject);
       setBody(data.body);
       setSource(data.source);
-      setModel(data.model);
-      setNotice(data.notice);
+      setHasNotice(Boolean(data.notice));
     } catch (caught) {
       if (controller.signal.aborted) return;
       setError(getErrorMessage(caught));
@@ -83,10 +81,10 @@ export function ReminderComposer({ invoice, onDone }: { invoice: Invoice; onDone
         <span className="inline-flex items-center gap-1.5 font-medium text-ink-2">
           <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
           {drafting
-            ? 'The AI is drafting…'
+            ? 'AI Copilot is drafting…'
             : source === 'OPENROUTER_AI'
-              ? `Drafted by AI · ${model}`
-              : 'Drafted from the template · AI offline'}
+              ? 'Drafted by AI Copilot'
+              : 'Drafted from Standard Template'}
         </span>
         <button
           type="button"
@@ -99,7 +97,12 @@ export function ReminderComposer({ invoice, onDone }: { invoice: Invoice; onDone
         </button>
       </div>
 
-      {notice && !drafting && <p className="text-xs text-ink-3">{notice}</p>}
+      {hasNotice && !drafting && (
+        <p className="text-xs text-ink-2">
+          Live AI generation is unavailable in this environment; a standard reminder template was
+          pre-filled for your review.
+        </p>
+      )}
 
       {drafting ? (
         <div className="space-y-2" aria-busy="true">
